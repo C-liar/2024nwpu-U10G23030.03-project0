@@ -1,6 +1,13 @@
 #include <graphics.h>
 #include <bits/stdc++.h>
 
+#define DEBUG 0
+#if DEBUG == 1
+#define Dbg printf("%d\n", __LINE__);
+#elif DEBUG == 0
+#define Dbg
+#endif
+
 /*
   (0,0)
      +--x--------------------+
@@ -101,7 +108,6 @@ struct List {
 };
 
 void init(struct List *p) {
-    p = (List*)malloc(sizeof(List));
     p->next = NULL;
     p->prev = NULL;
     init_pos(&(p->val));
@@ -168,11 +174,10 @@ int **amap;
 
 void initMap() {
     amap = (int**)malloc(sizeof(int*) * H);
-    *amap = (int*)malloc(W * H * sizeof(int));
-    for (int y = 1; y < H; y++) {
-        amap[y] = *amap + W * y;
+    for (int i = 0; i < H; i++) {
+        amap[i] = (int*)malloc(sizeof(int) * W);
+        memset(amap[i], 0, sizeof(int) * W);
     }
-    memset(*amap, 0, W * H * sizeof(int));
 }
 
 void delMap() {
@@ -180,6 +185,16 @@ void delMap() {
     *amap = NULL;
     free(amap);
     amap = NULL;
+}
+
+void OutMap() {
+    puts("-------Map-------");
+    for (int y = 0; y < H; y++) {
+        for (int x = 0; x < W; x++) {
+            printf("%d%c", amap[y][x], " \n"[x == W - 1]);
+        }
+    }
+    puts("-------Map-------");
 }
 
 } // namespace Map
@@ -222,11 +237,9 @@ struct ::Pos initNextPos() {
             now.x--;
         }
         else if (now.x == 0) {
-            assert(now.y != Map::H - 1);
+            // assert(now.y != Map::H - 1);
             now.y++;
-        }
-        else {
-            assert(0);
+            if (now.y == Map::H) now = {0, 0};
         }
     }
     else { // even
@@ -234,11 +247,9 @@ struct ::Pos initNextPos() {
             now.x++;
         }
         else if (now.x == Map::W - 1) {
-            assert(now.y != Map::H - 1);
+            // assert(now.y != Map::H - 1);
             now.y++;
-        }
-        else {
-            assert(0);
+            if (now.y == Map::H) now = {0, 0};
         }
     }
     return now;
@@ -246,7 +257,8 @@ struct ::Pos initNextPos() {
 
 // volatile rawLen but 1 snake
 void init(struct Snake *s) {
-    s = (struct Snake*)malloc(sizeof(struct Snake));
+    s->Head = (my_list::List*)malloc(sizeof(struct my_list::List));
+    s->Tail = (my_list::List*)malloc(sizeof(struct my_list::List));
     my_list::init(s->Head);
     my_list::init(s->Tail);
     s->add = 0;
@@ -255,28 +267,35 @@ void init(struct Snake *s) {
     struct my_list::List *p = s->Head;
     struct my_list::List *Now = NULL;
     
+    Dbg
+    
     /**
      * 0<-[Tail]-> ... <-[Now]-> <-[p]-> ... <-[Head]->0
      * link p & now to build body
      **/
     while (rem--) {
+        Now = (my_list::List*)malloc(sizeof(struct my_list::List));
         my_list::init(Now);
         p->next = Now;
         Now->prev = p;
         p = Now;
+        
+        Dbg
     }
+    
+    Dbg
     
     // link tail & last body
     p->next = s->Tail;
     s->Tail->prev = p;
     
-    p = s->Tail;
+    p = s->Head;
     
     // put the snake into Map
     while (p->next != NULL) {
         p->val = initNextPos();
+        Map::amap[p->val.y][p->val.x] = SNAKE_VAL;
         p = p->next;
-        
     }
     
     // calc Head toward
@@ -322,7 +341,7 @@ const color_t AppleColor = RED;
 int isEdge(int,int);
 
 struct ::Pos PosOfPixel(int x, int y) {
-    assert(!isEdge(x, y));
+    // assert(!isEdge(x, y));
     struct Pos res;
     res.x = (x - Map::Edge) / Map::aPixel;
     res.y = (y - Map::Edge) / Map::aPixel;
@@ -332,31 +351,50 @@ struct ::Pos PosOfPixel(int x, int y) {
 int isEdge(int x, int y) {
     return x < Map::Edge
         || y < Map::Edge
-        || x >= Map::W - Map::Edge
-        || y >= Map::H - Map::Edge;
+        || x >= Width - Map::Edge
+        || y >= High - Map::Edge;
 }
 
-int isGround(int x, int y) {
+int isNotEdge(int x, int y) {
     return !isEdge(x, y);
 }
 
 int isSnake(int x, int y) {
+    if (!isNotEdge(x, y)) return 0;
     struct Pos p = PosOfPixel(x, y);
     return Map::amap[p.y][p.x] == SNAKE_VAL;
 }
 
 int isApple(int x, int y) {
+    if (!isNotEdge(x, y)) return 0;
     struct Pos p = PosOfPixel(x, y);
     return Map::amap[p.y][p.x] == APPLE_VAL;
 }
 
+int isGround(int x, int y) {
+    return isNotEdge(x, y) && !isApple(x, y) && !isSnake(x, y);
+}
+
 void drawMap() {
+    if (DEBUG) Map::OutMap();
     for (int x = 0; x < Width; x++) {
         for (int y = 0; y < High; y++) {
-            if (isEdge(x, y)) putpixel(x, y, EdgeBk);
-            if (isGround(x, y)) putpixel(x, y, GroundBk);
-            if (isSnake(x, y)) putpixel(x, y, SnakeColor);
-            if (isApple(x, y)) putpixel(x, y, AppleColor);
+            if (isEdge(x, y)) {
+                putpixel(x, y, EdgeBk);
+                continue;
+            }
+            if (isGround(x, y)) {
+                putpixel(x, y, GroundBk);
+                continue;
+            }
+            if (isSnake(x, y)) {
+                putpixel(x, y, SnakeColor);
+                continue;
+            }
+            if (isApple(x, y)) {
+                putpixel(x, y, AppleColor);
+                continue;
+            }
         }
     }
 }
@@ -397,22 +435,47 @@ void Set() {
             PosPool[j - 1] = PosPool[j];
         }
         nHead--;
+        cnt++;
     }
 }
 
 }
 
 int MoveSnake(struct doSnake::Snake *s) {
-    struct ::Pos NewHead;
-    NewHead = {
+    struct my_list::List* NewHead;
+    NewHead = (struct my_list::List*)malloc(sizeof(struct my_list::List));
+    my_list::init(NewHead);
+    
+//    printf("$ %d ", s->toward);
+    
+    NewHead->val = {
         (s->Head->val.x + dx[s->toward] + Map::W) % Map::W,
         (s->Head->val.y + dy[s->toward] + Map::H) % Map::H
     };
-    int val = Map::amap[NewHead.y][NewHead.x];
+    
+    int val = Map::amap[NewHead->val.y][NewHead->val.x];
+//    printf("%d %d\n", NewHead->val.y, NewHead->val.x);
     if (val == SNAKE_VAL) return 0;
-    if (val == APPLE_VAL) s->add++;
+    if (val == APPLE_VAL) {
+        s->add += 1;
+    }
+    Map::amap[NewHead->val.y][NewHead->val.x] = SNAKE_VAL;
     
+    // Add a New Head.
+    s->Head->prev = NewHead;
+    NewHead->next = s->Head;
+    s->Head = NewHead;
     
+    // Delete Tail
+    if (s->add) s->add--;
+    else {
+        struct my_list::List* NewTail = s->Tail->prev;
+        Map::amap[s->Tail->val.y][s->Tail->val.x] = GROUND_VAL;
+        my_list::del_next(NewTail);
+        s->Tail = NewTail;
+    }
+    
+    return 1;
 }
 
 void Start() {
@@ -421,11 +484,14 @@ void Start() {
     my_output::_outtextxy(Wmid, Hmid - textheight("a") * 2, "Welcome to Gluttonous Snake!");
     my_output::_outtextxy(Wmid, Hmid, "press any key to start...");
     
+    Dbg
+    
     my_random::_init();
     Map::initMap();
     SetApple::init();
     
     getch();
+    Dbg
 }
 
 void Main() {
@@ -434,15 +500,59 @@ void Main() {
     
     while (1) {
         
-        doSnake::init(s);
         Map::initMap();
+        
+        Dbg
+        
+        s = (struct doSnake::Snake*)malloc(sizeof(struct doSnake::Snake));
+        doSnake::init(s);
+        
+        Dbg
+        
+        Draw::drawMap();
+        
+        Dbg
+        
+        SetApple::init();
+        
+        Dbg
         
         while (1) {
             delay_fps(fps);
             SetApple::Set();
-            int res = MoveSnake(s);
             
+            Dbg
+            
+            if (kbhit()) {
+                
+                enum _toward twd = s->toward;
+                
+                
+                key_msg S = getkey();
+                if (S.key == key_up || S.key == key_W) {
+                    if (twd == l || twd == r) twd = u;
+                }
+                if (S.key == key_left || S.key == key_A) {
+                    if (twd == u || twd == d) twd = l;
+                }
+                if (S.key == key_down || S.key == key_S) {
+                    if (twd == l || twd == r) twd = d;
+                }
+                if (S.key == key_right || S.key == key_D) {
+                    if (twd == u || twd == d) twd = r;
+                }
+                
+                s->toward = twd;
+                flushkey();
+            }
+            
+            int res = MoveSnake(s);
+            if (!res) goto gamefail;
+            
+            Draw::drawMap();
         }
+        
+      gamefail:
         
         Map::delMap();
         doSnake::del(s);
@@ -455,8 +565,6 @@ int main()
 	initgraph(Width, High);				//初始化图形界面
 	
 	Start();
-	
-	cleardevice();
 	
 	Main();
 	
