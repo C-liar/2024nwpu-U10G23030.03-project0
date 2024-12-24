@@ -1,6 +1,16 @@
+/*******************************************
+ * 
+ * 西北工业大学程序设计基础III实验课大作业
+ * 
+ * 项目名称：贪吃蛇
+ * 小组成员：刘逸熙、李霖、蔡思博
+ * 
+ * 
+ *******************************************/
 #include <graphics.h>
 #include <bits/stdc++.h>
 
+// 供开发者使用，是否进入 debug 模式以输出运行信息
 #define DEBUG 0
 #if DEBUG == 1
 #   define Dbg printf("%d\n", __LINE__);
@@ -8,7 +18,7 @@
 #   define Dbg
 #endif
 
-/*
+/* 图像坐标说明
   (0,0)
      +--x--------------------+
      |                       |  A
@@ -32,17 +42,21 @@ enum _toward { u = 0, r = 1, d = 2, l = 3 };
 const int dy[] = {-1, 0, 1, 0};
 const int dx[] = {0, 1, 0, -1};
 
-namespace my_output {
+namespace ns_Output {
 
 void _outtextxy(int x, int y, const char* str) {
     outtextxy(x - textwidth(str) / 2, y - textheight(str) / 2, str);
 }
 
-} // namespace my_output
+void _outtextxy(int x, int y, const wchar_t* str) {
+    outtextxy(x - textwidth(str) / 2, y - textheight(str) / 2, str);
+}
 
-namespace my_random {
+} // namespace ns_Output
 
-void _init() {
+namespace ns_Random {
+
+void init() {
     srand(time(NULL));
 }
 
@@ -55,42 +69,7 @@ int rand(int x, int y) {
     return _rand() % (y - x + 1) + x;
 }
 
-}
-
-namespace _waste {
-
-class bot {
-  public:
-    int x, y;
-    enum _toward toward;
-    bot () : x(0), y(0), toward(r) {}
-    bot (int x, int y, _toward twd) :
-        x(x), y(y), toward(twd) {}
-    
-    void display () const {
-        setcolor(YELLOW);
-        for (int x0 = 0; x0 < Width; x0++) {
-            for (int y0 = 0; y0 < High; y0++) {
-                if (std::hypot(x0 - x, y0 - y) < 10) {
-                    /**
-                     * position of mouth :
-                     * u : y0 - y > 0 && abs(x0 - x) < y0 - y
-                     * r : x0 - x > 0 && abs(y0 - y) < x0 - x
-                     * d : y0 - y < 0 && abs(x0 - x) < y - y0
-                     * l : x0 - x < 0 && abs(y0 - y) < x - x0
-                     **/
-                    if (toward == u && (y0 - y > 0 && abs(x0 - x) < y0 - y)) continue;
-                    if (toward == r && (x0 - x > 0 && abs(y0 - y) < x0 - x)) continue;
-                    if (toward == d && (y0 - y < 0 && abs(x0 - x) < y - y0)) continue;
-                    if (toward == l && (x0 - x < 0 && abs(y0 - y) < x - x0)) continue;
-                    putpixel(x0, y0, WHITE);
-                }
-            }
-        }
-    }
-};
-
-} // namespace _waste
+} // namespace ns_Random
 
 struct Pos {
     int x, y;
@@ -100,7 +79,7 @@ void init_pos(struct Pos *p) {
     p->x = p->y = 0;
 }
 
-namespace my_list {
+namespace ns_List {
 
 struct List {
     struct List *prev, *next;
@@ -139,31 +118,31 @@ void add_prev(struct List* Now, struct List* Prev) {
     Now->prev = Prev;
 }
 
-}
+} // namespace ns_List
 
-namespace Map {
+namespace ns_Map {
 
 /**
- * done:
- *  1. volatile Map 
+ * 完成的：
+ *  1. 可变大小的地图（直接修改 Width 和 High）
  * 
  * TODO:
- *  1. 2 snakes fight mode.
- *  2. variable candy.
+ *  1. 双人对战模式
+ *  2. 更多苹果模组
  * 
  **/
 
 const int Edge = 40;
-const int aPixel = 20;
+const int aPixel = 20;   // 不要改这个了
 const int W = (Width - Edge * 2) / aPixel;
 const int H = (High - Edge * 2) / aPixel;
 
-#define GROUND_VAL 0
-#define SNAKE_VAL 1
-#define APPLE_VAL 2
-#define BIG_APPLE_VAL 3
-#define SUPER_APPLE_VAL 4
-#define ULTRA_APPLE_VAL 5
+#define GROUND_VAL 0                // 背景
+#define SNAKE_VAL 1                 // 蛇
+#define APPLE_VAL 2                 // 苹果
+#define BIG_APPLE_VAL 3             // 大苹果
+#define SUPER_APPLE_VAL 4           // 超级苹果
+#define ULTRA_APPLE_VAL 5           // 至尊苹果
 
 /**
  * Ground = 0
@@ -175,7 +154,7 @@ const int H = (High - Edge * 2) / aPixel;
  **/
 int **amap;
 
-void initMap() {
+void init() {
     amap = (int**)malloc(sizeof(int*) * H);
     for (int i = 0; i < H; i++) {
         amap[i] = (int*)malloc(sizeof(int) * W);
@@ -184,8 +163,10 @@ void initMap() {
 }
 
 void delMap() {
-    free(*amap);
-    *amap = NULL;
+    for (int i = 0; i < H; i++) {
+        free(amap[i]);
+        amap[i] = NULL;
+    }
     free(amap);
     amap = NULL;
 }
@@ -200,29 +181,29 @@ void OutMap() {
     puts("-------Map-------");
 }
 
-} // namespace Map
+} // namespace ns_Map
 
-namespace doSnake {
+namespace ns_Snake {
 
 const int rawLen = 3;
 
 /**
  * done:
- *  1. volatile rawLen
+ *  1. 可变长度
  *
  * TODO:
- *  1. 2 Snakes fight mode.
- *  2. variable candy.
+ *  1. 双人对战
+ *  2. 吃不同的苹果，变长不同
  **/
 
 struct Snake {
-    struct my_list::List* Head;
-    struct my_list::List* Tail;
+    struct ns_List::List* Head;
+    struct ns_List::List* Tail;
     int add;
     enum _toward toward;
 };
 
-/**
+/** 要分配位置的蛇很长时，以这样的顺序安排蛇的位置
  *  (0,0)
  *    +--x--------------------+
  *    | ---->----->----->----V|  A
@@ -233,8 +214,15 @@ struct Snake {
  *    +-----------------------+
  *          <--Width-->
  **/
-struct ::Pos initNextPos() {
+struct ::Pos initNextPos(int reset = 0, int nx = -1, int ny = 0) {
     static ::Pos now = {-1, 0};
+    
+    // 重置一次位置
+    if (reset) {
+        now = {nx, ny};
+        return now;
+    }
+    
     if (now.y & 1) { // odd
         if (now.x > 0) {
             now.x--;
@@ -242,51 +230,51 @@ struct ::Pos initNextPos() {
         else if (now.x == 0) {
             // assert(now.y != Map::H - 1);
             now.y++;
-            if (now.y == Map::H) now = {0, 0};
+            if (now.y == ns_Map::H) now = {0, 0};
         }
     }
     else { // even
-        if (now.x < Map::W - 1) {
+        if (now.x < ns_Map::W - 1) {
             now.x++;
         }
-        else if (now.x == Map::W - 1) {
+        else if (now.x == ns_Map::W - 1) {
             // assert(now.y != Map::H - 1);
             now.y++;
-            if (now.y == Map::H) now = {0, 0};
+            if (now.y == ns_Map::H) now = {0, 0};
         }
     }
     return now;
 };
 
 void Reverse(struct Snake* s) {
-    my_list::List *p0 = s->Head, *p1 = s->Tail;
+    ns_List::List *p0 = s->Head, *p1 = s->Tail;
     while (p0 != NULL && p1 != NULL && p0 != p1 && p0->prev != p1) {
         std::swap(p0->val, p1->val);
         p0 = p0->next, p1 = p1->prev;
     }
 }
 
-// volatile rawLen but 1 snake
+// 单个蛇的可变长度
 void init(struct Snake *s) {
-    s->Head = (my_list::List*)malloc(sizeof(struct my_list::List));
-    s->Tail = (my_list::List*)malloc(sizeof(struct my_list::List));
-    my_list::init(s->Head);
-    my_list::init(s->Tail);
+    s->Head = (ns_List::List*)malloc(sizeof(struct ns_List::List));
+    s->Tail = (ns_List::List*)malloc(sizeof(struct ns_List::List));
+    ns_List::init(s->Head);
+    ns_List::init(s->Tail);
     s->add = 0;
     
     int rem = rawLen - 2;
-    struct my_list::List *p = s->Head;
-    struct my_list::List *Now = NULL;
+    struct ns_List::List *p = s->Head;
+    struct ns_List::List *Now = NULL;
     
     Dbg
     
     /**
      * 0<-[Tail]-> ... <-[Now]-> <-[p]-> ... <-[Head]->0
-     * link p & now to build body
+     * 连接 p & now 来构建身体
      **/
     while (rem--) {
-        Now = (my_list::List*)malloc(sizeof(struct my_list::List));
-        my_list::init(Now);
+        Now = (ns_List::List*)malloc(sizeof(struct ns_List::List));
+        ns_List::init(Now);
         p->next = Now;
         Now->prev = p;
         p = Now;
@@ -296,16 +284,16 @@ void init(struct Snake *s) {
     
     Dbg
     
-    // link tail & last body
+    // 连接尾巴和身体
     p->next = s->Tail;
     s->Tail->prev = p;
     
     p = s->Head;
     
-    // put the snake into Map
+    // 把蛇放进 Map 里
     do {
         p->val = initNextPos();
-        Map::amap[p->val.y][p->val.x] = SNAKE_VAL;
+        ns_Map::amap[p->val.y][p->val.x] = SNAKE_VAL;
         p = p->next;
         
         Dbg
@@ -313,14 +301,14 @@ void init(struct Snake *s) {
         
     } while (p != NULL);
     
-    // reverse the snake.
+    // 翻转蛇（因为奇怪的初始化方式带来的特性）
     
     Reverse(s);
     
     p = s->Head;
     
-    // calc Head toward
-    if (p->val.y & 1) { // odd
+    // 计算头朝向哪里
+    if (p->val.y & 1) { // 奇数行
         if (p->val.x > 0) {
             s->toward = l;
         }
@@ -328,30 +316,34 @@ void init(struct Snake *s) {
             s->toward = d;
         }
     }
-    else { // even
-        if (p->val.x < Map::W - 1) {
+    else { // 偶数行
+        if (p->val.x < ns_Map::W - 1) {
             s->toward = r;
         }
         else {
             s->toward = d;
         }
     }
+    
+    // 重置位置
+    initNextPos(1);
 }
 
 void del(struct Snake *s) {
-    my_list::List *rem = s->Head->next, *tmp = NULL;
+    ns_List::List *rem = s->Head->next, *tmp = NULL;
     while (rem != s->Tail && rem != NULL) {
         tmp = rem->next;
         free(rem);
         rem = tmp;
     }
     free(s->Head), free(s->Tail);
+    s->Head = s->Tail = NULL;
     free(s);
     s = NULL;
 }
 
 void OutSnake(struct Snake* s) {
-    my_list::List *p = s->Head;
+    ns_List::List *p = s->Head;
     int pit = 0;
     do {
         printf("pc = %d, pos = (%d, %d)\n", pit++, p->val.y, p->val.x);
@@ -359,30 +351,57 @@ void OutSnake(struct Snake* s) {
     } while (p != NULL);
 }
 
+} // namespace ns_Snake
+
+namespace ns_Image {
+
+int whiteAbs(color_t x) {
+    return (x & 0xff) + ((x >> 8) & 0xff) + ((x >> 16) & 0xff);
 }
 
-namespace Draw {
+bool isWhite(color_t x) {
+    if (whiteAbs(x) > 0xd0 * 3) return 1;
+    else return 0;
+}
 
-const color_t EdgeBk = BLUE;
-const color_t GroundBk = GRAY;
-const color_t SnakeColor = BLACK;
-const color_t AppleColor = RED;
+} // namespace ns_Image
+
+namespace ns_Draw {
+
+const color_t EdgeBk = 0xff80090d;
+const color_t GroundBk = 0xffffe7c5;
+const color_t SnakeColor = 0xfff91a09;
+
+color_t AppleImage[ns_Map::aPixel][ns_Map::aPixel];
+
+void init() {
+    // 加载苹果的图像，目前这一块可移植性不好，只能是 20*20 的
+    freopen("apple.txt", "r", stdin);
+    
+    for (int y = 0; y < ns_Map::aPixel; y++) {
+        for (int x = 0; x < ns_Map::aPixel; x++) {
+            scanf("%x", &AppleImage[y][x]);
+        }
+    }
+    
+    freopen(NULL, "r", stdin);
+}
 
 int isEdge(int,int);
 
 struct ::Pos PosOfPixel(int x, int y) {
     // assert(!isEdge(x, y));
     struct Pos res;
-    res.x = (x - Map::Edge) / Map::aPixel;
-    res.y = (y - Map::Edge) / Map::aPixel;
+    res.x = (x - ns_Map::Edge) / ns_Map::aPixel;
+    res.y = (y - ns_Map::Edge) / ns_Map::aPixel;
     return res;
 };
 
 int isEdge(int x, int y) {
-    return x < Map::Edge
-        || y < Map::Edge
-        || x >= Width - Map::Edge
-        || y >= High - Map::Edge;
+    return x < ns_Map::Edge
+        || y < ns_Map::Edge
+        || x >= Width - ns_Map::Edge
+        || y >= High - ns_Map::Edge;
 }
 
 int isNotEdge(int x, int y) {
@@ -392,38 +411,67 @@ int isNotEdge(int x, int y) {
 int isSnake(int x, int y) {
     if (!isNotEdge(x, y)) return 0;
     struct Pos p = PosOfPixel(x, y);
-    return Map::amap[p.y][p.x] == SNAKE_VAL;
+    return ns_Map::amap[p.y][p.x] == SNAKE_VAL;
 }
 
 int isApple(int x, int y) {
     if (!isNotEdge(x, y)) return 0;
     struct Pos p = PosOfPixel(x, y);
-    return Map::amap[p.y][p.x] == APPLE_VAL;
+    return ns_Map::amap[p.y][p.x] == APPLE_VAL;
 }
 
 int isGround(int x, int y) {
     return isNotEdge(x, y) && !isApple(x, y) && !isSnake(x, y);
 }
 
+void drawEdge(int x, int y) {
+    putpixel(x, y, EdgeBk);
+}
+
+void drawGround(int x, int y) {
+    putpixel(x, y, GroundBk);
+}
+
+void drawApple(int x, int y) {
+    int nx = x - PosOfPixel(x, y).x * ns_Map::aPixel - ns_Map::Edge;
+    int ny = y - PosOfPixel(x, y).y * ns_Map::aPixel - ns_Map::Edge;
+    
+    if (DEBUG) {
+        printf("(%d, %d) : %d", ny, nx, AppleImage[ny][nx]);
+    }
+    
+    if (AppleImage[ny][nx] == 0xffffff) {
+        drawGround(x, y);
+        return;
+    }
+    else {
+        putpixel(x, y, AppleImage[ny][nx] | (0xff << 24));
+    }
+}
+
+void drawSnake(struct ns_Snake::Snake *s) {
+    Pos HeadPos = s->Head->val;
+    // 下个或下下个版本更新。
+}
+
 void drawMap() {
-    if (DEBUG) Map::OutMap();
+    if (DEBUG) ns_Map::OutMap();
     for (int x = 0; x < Width; x++) {
         for (int y = 0; y < High; y++) {
             if (isEdge(x, y)) {
-                putpixel(x, y, EdgeBk);
+                drawEdge(x, y);
                 continue;
             }
             if (isGround(x, y)) {
-                putpixel(x, y, GroundBk);
+                drawGround(x, y);
+                continue;
+            }
+            if (isApple(x, y)) {
+                drawApple(x, y);
                 continue;
             }
             if (isSnake(x, y)) {
                 putpixel(x, y, SnakeColor);
-                continue;
-            }
-            if (isApple(x, y)) {
-                putpixel(x, y, AppleColor);
-                continue;
             }
         }
     }
@@ -431,36 +479,36 @@ void drawMap() {
 
 }
 
-namespace SetApple {
+namespace ns_Apple {
 
-const int MaxAppleCount = 3;
+const int MaxAppleCount = 40;
 
 struct ::Pos *PosPool;
 int nHead;
 
 void init() {
-    PosPool = (struct Pos*)malloc(sizeof(Pos) * Map::H * Map::W);
-    memset(PosPool, 0, sizeof(Pos) * Map::H * Map::W);
+    PosPool = (struct Pos*)malloc(sizeof(Pos) * ns_Map::H * ns_Map::W);
+    memset(PosPool, 0, sizeof(Pos) * ns_Map::H * ns_Map::W);
     nHead = 0;
 }
 
 void Set() {
     int cnt = 0;
     nHead = 0;
-    for (int y = 0; y < Map::H; y++) {
-        for (int x = 0; x < Map::W; x++) {
-            if (Map::amap[y][x] == APPLE_VAL) {
+    for (int y = 0; y < ns_Map::H; y++) {
+        for (int x = 0; x < ns_Map::W; x++) {
+            if (ns_Map::amap[y][x] == APPLE_VAL) {
                 cnt++;
             }
-            if (Map::amap[y][x] == GROUND_VAL) {
+            if (ns_Map::amap[y][x] == GROUND_VAL) {
                 PosPool[nHead++] = {x, y};
             }
         }
     }
     if (cnt == MaxAppleCount) return;
     while (cnt < MaxAppleCount) {
-        int x = my_random::rand(0, nHead - 1);
-        Map::amap[PosPool[x].y][PosPool[x].x] = APPLE_VAL;
+        int x = ns_Random::rand(0, nHead - 1);
+        ns_Map::amap[PosPool[x].y][PosPool[x].x] = APPLE_VAL;
         for (int j = x + 1; j < nHead; j++) {
             PosPool[j - 1] = PosPool[j];
         }
@@ -469,44 +517,44 @@ void Set() {
     }
 }
 
-}
+} // namespace ns_Apple
 
-int MoveSnake(struct doSnake::Snake *s) {
-    struct my_list::List* NewHead;
-    NewHead = (struct my_list::List*)malloc(sizeof(struct my_list::List));
-    my_list::init(NewHead);
+int MoveSnake(struct ns_Snake::Snake *s) {
+    struct ns_List::List* NewHead;
+    NewHead = (struct ns_List::List*)malloc(sizeof(struct ns_List::List));
+    ns_List::init(NewHead);
     
     if (DEBUG) printf("$ %d ", s->toward);
     
     NewHead->val = {
-        (s->Head->val.x + dx[s->toward] + Map::W) % Map::W,
-        (s->Head->val.y + dy[s->toward] + Map::H) % Map::H
+        (s->Head->val.x + dx[s->toward] + ns_Map::W) % ns_Map::W,
+        (s->Head->val.y + dy[s->toward] + ns_Map::H) % ns_Map::H
     };
     
-    int val = Map::amap[NewHead->val.y][NewHead->val.x];
+    int val = ns_Map::amap[NewHead->val.y][NewHead->val.x];
     
     if (DEBUG) {
         printf("Next: %d %d, val = %d\n", NewHead->val.y, NewHead->val.x, val);
-        doSnake::OutSnake(s);
+        ns_Snake::OutSnake(s);
     }
     
     if (val == SNAKE_VAL) return 0;
     if (val == APPLE_VAL) {
         s->add += 1;
     }
-    Map::amap[NewHead->val.y][NewHead->val.x] = SNAKE_VAL;
+    ns_Map::amap[NewHead->val.y][NewHead->val.x] = SNAKE_VAL;
     
-    // Add a New Head.
+    // 头前进一步
     s->Head->prev = NewHead;
     NewHead->next = s->Head;
     s->Head = NewHead;
     
-    // Delete Tail
+    // 尾巴后退
     if (s->add) s->add--;
     else {
-        struct my_list::List* NewTail = s->Tail->prev;
-        Map::amap[s->Tail->val.y][s->Tail->val.x] = GROUND_VAL;
-        my_list::del_next(NewTail);
+        struct ns_List::List* NewTail = s->Tail->prev;
+        ns_Map::amap[s->Tail->val.y][s->Tail->val.x] = GROUND_VAL;
+        ns_List::del_next(NewTail);
         s->Tail = NewTail;
     }
     
@@ -516,14 +564,15 @@ int MoveSnake(struct doSnake::Snake *s) {
 void Start() {
     setcolor(WHITE);
     setbkcolor(BLACK);
-    my_output::_outtextxy(Wmid, Hmid - textheight("a") * 2, "Welcome to Gluttonous Snake!");
-    my_output::_outtextxy(Wmid, Hmid, "press any key to start...");
+    ns_Output::_outtextxy(Wmid, Hmid - textheight("a") * 2, L"贪吃蛇");
+    ns_Output::_outtextxy(Wmid, Hmid, L"按任意键开始...");
     
     Dbg
     
-    my_random::_init();
-    Map::initMap();
-    SetApple::init();
+    ns_Random::init();
+    ns_Map::init();
+    ns_Apple::init();
+    ns_Draw::init();
     
     getch();
     Dbg
@@ -531,31 +580,31 @@ void Start() {
 
 void Main() {
     
-    doSnake::Snake *s;
+    ns_Snake::Snake *s;
     
     while (1) {
         
-        Map::initMap();
+        ns_Map::init();
         
         Dbg
         
-        s = (struct doSnake::Snake*)malloc(sizeof(struct doSnake::Snake));
-        doSnake::init(s);
+        s = (struct ns_Snake::Snake*)malloc(sizeof(struct ns_Snake::Snake));
+        ns_Snake::init(s);
         
         Dbg
         
-        Draw::drawMap();
+        ns_Draw::drawMap();
         
         Dbg
         
-        SetApple::init();
+        ns_Apple::init();
         
         Dbg
         
         while (1) {
             if (DEBUG) getch();
             else delay_fps(fps);
-            SetApple::Set();
+            ns_Apple::Set();
             
             Dbg
             
@@ -585,13 +634,13 @@ void Main() {
             
             if (!res) goto gamefail;
             
-            Draw::drawMap();
+            ns_Draw::drawMap();
         }
         
       gamefail:
         
-        Map::delMap();
-        doSnake::del(s);
+        ns_Map::delMap();
+        ns_Snake::del(s);
         
     }
 }
