@@ -3,9 +3,9 @@
 
 #define DEBUG 0
 #if DEBUG == 1
-#define Dbg printf("%d\n", __LINE__);
+#   define Dbg printf("%d\n", __LINE__);
 #elif DEBUG == 0
-#define Dbg
+#   define Dbg
 #endif
 
 /*
@@ -161,6 +161,9 @@ const int H = (High - Edge * 2) / aPixel;
 #define GROUND_VAL 0
 #define SNAKE_VAL 1
 #define APPLE_VAL 2
+#define BIG_APPLE_VAL 3
+#define SUPER_APPLE_VAL 4
+#define ULTRA_APPLE_VAL 5
 
 /**
  * Ground = 0
@@ -255,6 +258,14 @@ struct ::Pos initNextPos() {
     return now;
 };
 
+void Reverse(struct Snake* s) {
+    my_list::List *p0 = s->Head, *p1 = s->Tail;
+    while (p0 != NULL && p1 != NULL && p0 != p1 && p0->prev != p1) {
+        std::swap(p0->val, p1->val);
+        p0 = p0->next, p1 = p1->prev;
+    }
+}
+
 // volatile rawLen but 1 snake
 void init(struct Snake *s) {
     s->Head = (my_list::List*)malloc(sizeof(struct my_list::List));
@@ -292,11 +303,21 @@ void init(struct Snake *s) {
     p = s->Head;
     
     // put the snake into Map
-    while (p->next != NULL) {
+    do {
         p->val = initNextPos();
         Map::amap[p->val.y][p->val.x] = SNAKE_VAL;
         p = p->next;
-    }
+        
+        Dbg
+        if (DEBUG) printf("p = 0x%p\n", p);
+        
+    } while (p != NULL);
+    
+    // reverse the snake.
+    
+    Reverse(s);
+    
+    p = s->Head;
     
     // calc Head toward
     if (p->val.y & 1) { // odd
@@ -327,6 +348,15 @@ void del(struct Snake *s) {
     free(s->Head), free(s->Tail);
     free(s);
     s = NULL;
+}
+
+void OutSnake(struct Snake* s) {
+    my_list::List *p = s->Head;
+    int pit = 0;
+    do {
+        printf("pc = %d, pos = (%d, %d)\n", pit++, p->val.y, p->val.x);
+        p = p->next;
+    } while (p != NULL);
 }
 
 }
@@ -446,7 +476,7 @@ int MoveSnake(struct doSnake::Snake *s) {
     NewHead = (struct my_list::List*)malloc(sizeof(struct my_list::List));
     my_list::init(NewHead);
     
-//    printf("$ %d ", s->toward);
+    if (DEBUG) printf("$ %d ", s->toward);
     
     NewHead->val = {
         (s->Head->val.x + dx[s->toward] + Map::W) % Map::W,
@@ -454,7 +484,12 @@ int MoveSnake(struct doSnake::Snake *s) {
     };
     
     int val = Map::amap[NewHead->val.y][NewHead->val.x];
-//    printf("%d %d\n", NewHead->val.y, NewHead->val.x);
+    
+    if (DEBUG) {
+        printf("Next: %d %d, val = %d\n", NewHead->val.y, NewHead->val.x, val);
+        doSnake::OutSnake(s);
+    }
+    
     if (val == SNAKE_VAL) return 0;
     if (val == APPLE_VAL) {
         s->add += 1;
@@ -518,7 +553,8 @@ void Main() {
         Dbg
         
         while (1) {
-            delay_fps(fps);
+            if (DEBUG) getch();
+            else delay_fps(fps);
             SetApple::Set();
             
             Dbg
@@ -526,7 +562,6 @@ void Main() {
             if (kbhit()) {
                 
                 enum _toward twd = s->toward;
-                
                 
                 key_msg S = getkey();
                 if (S.key == key_up || S.key == key_W) {
@@ -547,6 +582,7 @@ void Main() {
             }
             
             int res = MoveSnake(s);
+            
             if (!res) goto gamefail;
             
             Draw::drawMap();
