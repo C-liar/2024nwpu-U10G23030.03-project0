@@ -30,8 +30,10 @@
            <--Width-->
 */
 
-const int Width = 640;
-const int High = 480;
+int player_mode; // 1 单人 2 双人
+
+const int Width = 1080;
+const int High = 600;
 const int Wmid = Width / 2;
 const int Hmid = High / 2;
 const int BufLen = 0x10000;
@@ -125,10 +127,10 @@ namespace ns_Map {
 /**
  * 完成的：
  *  1. 可变大小的地图（直接修改 Width 和 High）
+ *  2. 双人对战模式
  * 
  * TODO:
- *  1. 双人对战模式
- *  2. 更多苹果模组
+ *  1. 更多苹果模组
  * 
  **/
 
@@ -139,10 +141,11 @@ const int H = (High - Edge * 2) / aPixel;
 
 #define GROUND_VAL 0                // 背景
 #define SNAKE_VAL 1                 // 蛇
-#define APPLE_VAL 2                 // 苹果
-#define BIG_APPLE_VAL 3             // 大苹果
-#define SUPER_APPLE_VAL 4           // 超级苹果
-#define ULTRA_APPLE_VAL 5           // 至尊苹果
+#define SNAKE2_VAL 2                // 第二条蛇（双人模式）
+#define APPLE_VAL 3                 // 苹果
+#define BIG_APPLE_VAL 4             // 大苹果（下版本更新）
+#define SUPER_APPLE_VAL 5           // 超级苹果（咕咕咕
+#define ULTRA_APPLE_VAL 6           // 至尊苹果（咕
 
 /**
  * Ground = 0
@@ -185,7 +188,7 @@ void OutMap() {
 
 namespace ns_Snake {
 
-const int rawLen = 3;
+const int rawLen = 5;
 
 /**
  * done:
@@ -194,6 +197,7 @@ const int rawLen = 3;
  * TODO:
  *  1. 双人对战
  *  2. 吃不同的苹果，变长不同
+ *  3. 人机蛇
  **/
 
 struct Snake {
@@ -244,6 +248,42 @@ struct ::Pos initNextPos(int reset = 0, int nx = -1, int ny = 0) {
         }
     }
     return now;
+};
+
+// 方向和上面的相反，中心对称
+struct ::Pos initNextPos_2(int reset = 0, int nx = -1, int ny = 0) {
+    static ::Pos now = {-1, 0};
+    
+    // 重置一次位置
+    if (reset) {
+        now = {nx, ny};
+        return now;
+    }
+    
+    if (now.y & 1) { // odd
+        if (now.x > 0) {
+            now.x--;
+        }
+        else if (now.x == 0) {
+            // assert(now.y != Map::H - 1);
+            now.y++;
+            if (now.y == ns_Map::H) now = {0, 0};
+        }
+    }
+    else { // even
+        if (now.x < ns_Map::W - 1) {
+            now.x++;
+        }
+        else if (now.x == ns_Map::W - 1) {
+            // assert(now.y != Map::H - 1);
+            now.y++;
+            if (now.y == ns_Map::H) now = {0, 0};
+        }
+    }
+    
+    Pos the_EmpErroR = {ns_Map::W - now.x - 1, ns_Map::H - now.y - 1};
+    
+    return the_EmpErroR;
 };
 
 void Reverse(struct Snake* s) {
@@ -329,6 +369,81 @@ void init(struct Snake *s) {
     initNextPos(1);
 }
 
+void init_2(struct Snake *s) {
+    s->Head = (ns_List::List*)malloc(sizeof(struct ns_List::List));
+    s->Tail = (ns_List::List*)malloc(sizeof(struct ns_List::List));
+    ns_List::init(s->Head);
+    ns_List::init(s->Tail);
+    s->add = 0;
+    
+    int rem = rawLen - 2;
+    struct ns_List::List *p = s->Head;
+    struct ns_List::List *Now = NULL;
+    
+    Dbg
+    
+    /**
+     * 0<-[Tail]-> ... <-[Now]-> <-[p]-> ... <-[Head]->0
+     * 连接 p & now 来构建身体
+     **/
+    while (rem--) {
+        Now = (ns_List::List*)malloc(sizeof(struct ns_List::List));
+        ns_List::init(Now);
+        p->next = Now;
+        Now->prev = p;
+        p = Now;
+        
+        Dbg
+    }
+    
+    Dbg
+    
+    // 连接尾巴和身体
+    p->next = s->Tail;
+    s->Tail->prev = p;
+    
+    p = s->Head;
+    
+    // 把蛇放进 Map 里
+    do {
+        p->val = initNextPos_2();
+        ns_Map::amap[p->val.y][p->val.x] = SNAKE2_VAL;
+        p = p->next;
+        
+        Dbg
+        if (DEBUG) printf("p = 0x%p\n", p);
+        
+    } while (p != NULL);
+    
+    // 翻转蛇（因为奇怪的初始化方式带来的特性）
+    Reverse(s);
+    
+    p = s->Head;
+    
+    Pos val2 = {ns_Map::W - 1 - p->val.x, ns_Map::H - 1 - p->val.y};
+    
+    // 计算头朝向哪里
+    if (val2.y & 1) { // 奇数行
+        if (val2.x > 0) {
+            s->toward = r;
+        }
+        else {
+            s->toward = u;
+        }
+    }
+    else { // 偶数行
+        if (val2.x < ns_Map::W - 1) {
+            s->toward = l;
+        }
+        else {
+            s->toward = u;
+        }
+    }
+    
+    // 重置位置
+    initNextPos_2(1);
+}
+
 void del(struct Snake *s) {
     ns_List::List *rem = s->Head->next, *tmp = NULL;
     while (rem != s->Tail && rem != NULL) {
@@ -371,6 +486,7 @@ namespace ns_Draw {
 const color_t EdgeBk = 0xff80090d;
 const color_t GroundBk = 0xffffe7c5;
 const color_t SnakeColor = 0xfff91a09;
+const color_t Snake2Color = 0xffffcd02;
 
 color_t AppleImage[ns_Map::aPixel][ns_Map::aPixel];
 
@@ -414,6 +530,12 @@ int isSnake(int x, int y) {
     return ns_Map::amap[p.y][p.x] == SNAKE_VAL;
 }
 
+int isSnake_2(int x, int y) {
+    if (!isNotEdge(x, y)) return 0;
+    struct Pos p = PosOfPixel(x, y);
+    return ns_Map::amap[p.y][p.x] == SNAKE2_VAL;
+}
+
 int isApple(int x, int y) {
     if (!isNotEdge(x, y)) return 0;
     struct Pos p = PosOfPixel(x, y);
@@ -421,7 +543,9 @@ int isApple(int x, int y) {
 }
 
 int isGround(int x, int y) {
-    return isNotEdge(x, y) && !isApple(x, y) && !isSnake(x, y);
+    if (!isNotEdge(x, y)) return 0;
+    struct Pos p = PosOfPixel(x, y);
+    return ns_Map::amap[p.y][p.x] == GROUND_VAL;
 }
 
 void drawEdge(int x, int y) {
@@ -454,6 +578,10 @@ void drawSnake(struct ns_Snake::Snake *s) {
     // 下个或下下个版本更新。
 }
 
+void drawSnake_2() {
+    // 咕咕咕。
+}
+
 void drawMap() {
     if (DEBUG) ns_Map::OutMap();
     for (int x = 0; x < Width; x++) {
@@ -473,15 +601,18 @@ void drawMap() {
             if (isSnake(x, y)) {
                 putpixel(x, y, SnakeColor);
             }
+            if (isSnake_2(x, y)) {
+                putpixel(x, y, Snake2Color);
+            }
         }
     }
 }
 
-}
+} // namespace ns_Draw
 
 namespace ns_Apple {
 
-const int MaxAppleCount = 40;
+const int MaxAppleCount = 5;
 
 struct ::Pos *PosPool;
 int nHead;
@@ -519,7 +650,7 @@ void Set() {
 
 } // namespace ns_Apple
 
-int MoveSnake(struct ns_Snake::Snake *s) {
+int MoveSnake(struct ns_Snake::Snake *s, int opt = 0) {
     struct ns_List::List* NewHead;
     NewHead = (struct ns_List::List*)malloc(sizeof(struct ns_List::List));
     ns_List::init(NewHead);
@@ -538,11 +669,17 @@ int MoveSnake(struct ns_Snake::Snake *s) {
         ns_Snake::OutSnake(s);
     }
     
-    if (val == SNAKE_VAL) return 0;
-    if (val == APPLE_VAL) {
-        s->add += 1;
+    if (val == SNAKE_VAL || val == SNAKE2_VAL) return 0;
+    
+    switch (val) {
+        case APPLE_VAL :         s->add += 1;   break;
+        case BIG_APPLE_VAL :     s->add += 3;   break;
+        case SUPER_APPLE_VAL :   s->add += 5;   break;
+        case ULTRA_APPLE_VAL :   s->add += 10;  break;
     }
-    ns_Map::amap[NewHead->val.y][NewHead->val.x] = SNAKE_VAL;
+    
+    if (opt == 0) ns_Map::amap[NewHead->val.y][NewHead->val.x] = SNAKE_VAL;
+    if (opt == 1) ns_Map::amap[NewHead->val.y][NewHead->val.x] = SNAKE2_VAL;
     
     // 头前进一步
     s->Head->prev = NewHead;
@@ -562,20 +699,42 @@ int MoveSnake(struct ns_Snake::Snake *s) {
 }
 
 void Start() {
-    setcolor(WHITE);
-    setbkcolor(BLACK);
-    ns_Output::_outtextxy(Wmid, Hmid - textheight("a") * 2, L"贪吃蛇");
-    ns_Output::_outtextxy(Wmid, Hmid, L"按任意键开始...");
+    PIMAGE img = newimage(Width, High);
+    if (getimage(img, "Start.jpg", Width, High)) {
+        puts("start image error.");
+        exit(114);
+    }
+    putimage(0, 0, img);
     
     Dbg
+    
+    const int s_lx = 165, s_rx = 324;
+    const int s_ly = 281, s_ry = 353;
+    
+    const int d_lx = 766, d_rx = 926;
+    const int d_ly = 281, d_ry = 353;
+    
+    while (1) {
+        while (keystate(key_mouse_l)) {
+            int x, y;
+            mousepos(&x, &y);
+            if (s_lx <= x && x <= s_rx && s_ly <= y && y <= s_ry) {
+                player_mode = 1;
+                goto Single;
+            }
+            if (d_lx <= x && x <= d_rx && d_ly <= y && y <= d_ry) {
+                player_mode = 2;
+                goto Double;
+            }
+        }
+    }
+    
+  Single:
+  Double:
     
     ns_Random::init();
-    ns_Map::init();
     ns_Apple::init();
     ns_Draw::init();
-    
-    getch();
-    Dbg
 }
 
 void Main() {
@@ -645,13 +804,95 @@ void Main() {
     }
 }
 
+void Main_2() {
+    
+    ns_Snake::Snake *s;
+    
+    while (1) {
+        
+        ns_Map::init();
+        
+        Dbg
+        
+        s = (struct ns_Snake::Snake*)malloc(sizeof(struct ns_Snake::Snake) * 2);
+        ns_Snake::init(s);
+        ns_Snake::init_2(s + 1);
+        
+        Dbg
+        
+        ns_Draw::drawMap();
+        
+        Dbg
+        
+        ns_Apple::init();
+        
+        Dbg
+        
+        while (1) {
+            if (DEBUG) getch();
+            else delay_fps(fps);
+            ns_Apple::Set();
+            
+            Dbg
+            
+            if (keystate(key_W)) if (s->toward == l || s->toward == r) {s->toward = u; goto Nx;}
+            if (keystate(key_A)) if (s->toward == u || s->toward == d) {s->toward = l; goto Nx;}
+            if (keystate(key_S)) if (s->toward == l || s->toward == r) {s->toward = d; goto Nx;}
+            if (keystate(key_D)) if (s->toward == u || s->toward == d) {s->toward = r; goto Nx;}
+            
+          Nx:
+            
+            s++;
+            
+            if (keystate(key_up)) if (s->toward == l || s->toward == r) {s->toward = u; goto Nx2;}
+            if (keystate(key_left)) if (s->toward == u || s->toward == d) {s->toward = l; goto Nx2;}
+            if (keystate(key_down)) if (s->toward == l || s->toward == r) {s->toward = d; goto Nx2;}
+            if (keystate(key_right)) if (s->toward == u || s->toward == d) {s->toward = r; goto Nx2;}
+            
+          Nx2:
+            
+            s--;
+            
+            int res = MoveSnake(s);
+            int res2 = MoveSnake(s + 1, 1);
+            
+            if (!res && !res2) goto gamefail0;
+            if (!res)          goto gamefail1;
+            if (!res2)         goto gamefail2;
+            
+            ns_Draw::drawMap();
+        }
+        
+      gamefail1:
+        
+        ns_Output::_outtextxy(Width / 2, High / 2, L"1 loser, 2 winner.");
+        goto ed;
+      
+      gamefail2:
+        
+        ns_Output::_outtextxy(Width / 2, High / 2, L"2 loser, 1 winner.");
+        
+      gamefail0:
+        
+        goto ed;
+        
+      ed:
+        
+        while (!keystate(key_mouse_l)) delay_ms(10);
+        ns_Map::delMap();
+        ns_Snake::del(s);
+        
+    }
+}
+
 int main()
 {
 	initgraph(Width, High);				//初始化图形界面
 	
 	Start();
 	
-	Main();
+	if (player_mode == 1) Main();
+	else Main_2();
 	
 	getch();                            //暂停，等待键盘按键
 
