@@ -142,10 +142,12 @@ const int H = (High - Edge * 2) / aPixel;
 #define GROUND_VAL 0                // 背景
 #define SNAKE_VAL 1                 // 蛇
 #define SNAKE2_VAL 2                // 第二条蛇（双人模式）
-#define APPLE_VAL 3                 // 苹果
-#define BIG_APPLE_VAL 4             // 大苹果（下版本更新）
-#define SUPER_APPLE_VAL 5           // 超级苹果（咕咕咕
-#define ULTRA_APPLE_VAL 6           // 至尊苹果（咕
+#define APPLE_VAL 3                 // 苹果（+1）
+#define BIG_APPLE_VAL 4             // 大苹果（+3）
+#define SUPER_APPLE_VAL 5           // 超级苹果（+5）
+#define ULTRA_APPLE_VAL 6           // 至尊苹果（+10）
+#define POISON_APPLE_VAL 7          // 毒苹果（-5）
+#define DEATH_APPLE_VAL 8           // 吃了会暴毙的苹果（-inf）
 
 /**
  * Ground = 0
@@ -488,19 +490,117 @@ const color_t GroundBk = 0xffffe7c5;
 const color_t SnakeColor = 0xfff91a09;
 const color_t Snake2Color = 0xffffcd02;
 
-color_t AppleImage[ns_Map::aPixel][ns_Map::aPixel];
+const color_t ToSet = 0x80000000;
+const color_t SnakeEdge = 0xff000000;
+const color_t SnakeEye = EdgeBk;
+
+color_t AppleImage[ns_Map::aPixel][ns_Map::aPixel];               // 必须20*20
+color_t SnakeHeadImage[ns_Map::aPixel][ns_Map::aPixel];           // 必须20*20
+color_t SnakeBodyImage[ns_Map::aPixel][ns_Map::aPixel];           // 必须20*20
+color_t SnakeTurnImage[ns_Map::aPixel][ns_Map::aPixel];           // 必须20*20
+color_t SnakeTailImage[ns_Map::aPixel][ns_Map::aPixel];           // 必须20*20
 
 void init() {
-    // 加载苹果的图像，目前这一块可移植性不好，只能是 20*20 的
+    int n = ns_Map::aPixel;
+    
+    // 加载苹果的图像，只能是 20*20 的
     freopen("apple.txt", "r", stdin);
     
-    for (int y = 0; y < ns_Map::aPixel; y++) {
-        for (int x = 0; x < ns_Map::aPixel; x++) {
+    for (int y = 0; y < n; y++) {
+        for (int x = 0; x < n; x++) {
             scanf("%x", &AppleImage[y][x]);
         }
     }
     
+    freopen("Snake.txt", "r", stdin);
+    
+    // 输入蛇头
+    for (int y = 0; y < n; y++) {
+        for (int x = 0; x < n; x++) {
+            char m = getchar();
+            while (m != EOF && m <= 32) m = getchar();
+            if (m == 'B') {
+                SnakeHeadImage[y][x] = SnakeEdge;
+            }
+            if (m == 'D') {
+                SnakeHeadImage[y][x] = SnakeEye;
+            }
+        }
+    }
+    
+    // 操作。
+    for (int x = 0; x < n; x++) {
+        int flag = 0;
+        for (int y = 0; y < n; y++) {
+            flag |= (SnakeHeadImage[y][x] == SnakeEdge);
+            if (flag && SnakeHeadImage[y][x] == 0) {
+                SnakeHeadImage[y][x] = ToSet;
+            }
+        }
+    }
+    
+    // 直身
+    for (int y = 0; y < n; y++) {
+        int flag = 0;
+        for (int x = 0; x < n; x++) {
+            char m = getchar();
+            while (m != EOF && m <= 32) m = getchar();
+            flag ^= (m == 'B');
+            if (m == 'B') {
+                SnakeBodyImage[y][x] = SnakeEdge;
+            }
+            if (m == '0' && flag) {
+                SnakeBodyImage[y][x] = ToSet;
+            }
+        }
+    }
+    
+    // 转弯身
+    for (int y = 0; y < n; y++) {
+        for (int x = 0; x < n; x++) {
+            char m = getchar();
+            while (m != EOF && m <= 32) m = getchar();
+            if (m == 'B') {
+                SnakeTurnImage[y][x] = SnakeEdge;
+            }
+            if (m == 'R') {
+                SnakeTurnImage[y][x] = ToSet;
+            }
+        }
+    }
+    
+    for (int y = 0; y < n; y++) {
+        for (int x = 0; x < n; x++) {
+            char m = getchar();
+            while (m != EOF && m <= 32) m = getchar();
+            if (m == 'B') {
+                SnakeTailImage[y][x] = SnakeEdge;
+            }
+        }
+    }
+    
+    // 操作。
+    for (int x = 0; x < n; x++) {
+        int flag = 0;
+        for (int y = 0; y < n; y++) {
+            flag |= (SnakeTailImage[y][x] == SnakeEdge);
+            if (flag && SnakeTailImage[y][x] == 0) {
+                SnakeTailImage[y][x] = ToSet;
+            }
+        }
+    }
+    
     freopen(NULL, "r", stdin);
+    
+    if (DEBUG) {
+        for (int y = 0; y < n; y++) for (int x = 0; x < n; x++) {
+            if (SnakeHeadImage[y][x] == 0) putchar('0');
+            if (SnakeHeadImage[y][x] == ToSet) putchar('T');
+            if (SnakeHeadImage[y][x] == EdgeBk) putchar('D');
+            if (SnakeHeadImage[y][x] == SnakeEdge) putchar('B');
+            putchar(" \n"[x == 19]);
+        }
+    }
 }
 
 int isEdge(int,int);
@@ -573,16 +673,146 @@ void drawApple(int x, int y) {
     }
 }
 
-void drawSnake(struct ns_Snake::Snake *s) {
+// u, r, d, l
+void drawHead(int x, int y, int toward, const color_t Color) {
+    int n = ns_Map::aPixel;
+    int mx = x * ns_Map::aPixel + ns_Map::Edge;
+    int my = y * ns_Map::aPixel + ns_Map::Edge;
+    
+    // 20 * 20 中的 x, y
+    for (int y = 0; y < n; y++) {
+        for (int x = 0; x < n; x++) {
+            int nx = mx, ny = my; // 真实的 x, y
+            if (toward == u) nx += x, ny += y;
+            if (toward == d) nx += 19 - x, ny += 19 - y;
+            if (toward == l) nx += y, ny += 19 - x;
+            if (toward == r) nx += 19 - y, ny += x;
+            
+            if (SnakeHeadImage[y][x] == ToSet) putpixel(nx, ny, Color);
+            else if (SnakeHeadImage[y][x] == 0) drawGround(nx, ny);
+            else if (SnakeHeadImage[y][x] == SnakeEdge) putpixel(nx, ny, SnakeEdge);
+            else if (SnakeHeadImage[y][x] == SnakeEye) putpixel(nx, ny, SnakeEye); 
+            else puts("Undefined color.");
+        }
+    }
+}
+
+// ud, lr
+void drawBody(int x, int y, int toward, const color_t Color) {
+    int n = ns_Map::aPixel;
+    int mx = x * ns_Map::aPixel + ns_Map::Edge;
+    int my = y * ns_Map::aPixel + ns_Map::Edge;
+    
+    // 20 * 20 中的 x, y
+    for (int y = 0; y < n; y++) {
+        for (int x = 0; x < n; x++) {
+            int nx = mx, ny = my; // 真实的 x, y
+            if (toward == 0) nx += x, ny += y;
+            if (toward == 1) nx += y, ny += x;
+            
+            if (SnakeBodyImage[y][x] == ToSet) putpixel(nx, ny, Color);
+            else if (SnakeBodyImage[y][x] == 0) drawGround(nx, ny);
+            else if (SnakeBodyImage[y][x] == SnakeEdge) putpixel(nx, ny, SnakeEdge);
+            else puts("Undefined color.");
+        }
+    }
+}
+
+// ul, ur, dl, dr : l = 0, r = 1, u = 0, d = 2
+void drawTurn(int x, int y, int toward, const color_t Color) {
+    int n = ns_Map::aPixel;
+    int mx = x * ns_Map::aPixel + ns_Map::Edge;
+    int my = y * ns_Map::aPixel + ns_Map::Edge;
+    
+    // 20 * 20 中的 x, y
+    for (int y = 0; y < n; y++) {
+        for (int x = 0; x < n; x++) {
+            int nx = mx, ny = my; // 真实的 x, y
+            if (toward == 0) nx += x, ny += y;
+            if (toward == 1) nx += 19 - x, ny += y;
+            if (toward == 2) nx += x, ny += 19 - y;
+            if (toward == 3) nx += 19 - x, ny += 19 - y;
+            
+            if (SnakeTurnImage[y][x] == ToSet) putpixel(nx, ny, Color);
+            else if (SnakeTurnImage[y][x] == 0) drawGround(nx, ny);
+            else if (SnakeTurnImage[y][x] == SnakeEdge) putpixel(nx, ny, SnakeEdge);
+            else puts("Undefined color.");
+        }
+    }
+}
+
+// u, r, d, l
+void drawTail(int x, int y, int toward, const color_t Color) {
+    int n = ns_Map::aPixel;
+    int mx = x * ns_Map::aPixel + ns_Map::Edge;
+    int my = y * ns_Map::aPixel + ns_Map::Edge;
+    
+    // 20 * 20 中的 x, y
+    for (int y = 0; y < n; y++) {
+        for (int x = 0; x < n; x++) {
+            int nx = mx, ny = my; // 真实的 x, y
+            if (toward == u) nx += x, ny += y;
+            if (toward == d) nx += 19 - x, ny += 19 - y;
+            if (toward == l) nx += y, ny += 19 - x;
+            if (toward == r) nx += 19 - y, ny += x;
+            
+            if (SnakeTailImage[y][x] == ToSet) putpixel(nx, ny, Color);
+            else if (SnakeTailImage[y][x] == 0) drawGround(nx, ny);
+            else if (SnakeTailImage[y][x] == SnakeEdge) putpixel(nx, ny, SnakeEdge);
+            else puts("Undefined color.");
+        }
+    }
+}
+
+void drawSnake(struct ns_Snake::Snake *s, const color_t Color) {
     Pos HeadPos = s->Head->val;
-    // 下个或下下个版本更新。
+    drawHead(HeadPos.x, HeadPos.y, s->toward, Color);
+    
+    ns_List::List *p = s->Head->next;
+    
+    while (p != NULL && p != s->Tail) {
+        int dx0 = (p->prev->val.x - p->val.x), dy0 = (p->prev->val.y - p->val.y);
+        int dx1 = (p->next->val.x - p->val.x), dy1 = (p->next->val.y - p->val.y);
+        
+        if (dx0 > 1) dx0 = -1; else if (dx0 < -1) dx0 = 1;
+        if (dy0 > 1) dy0 = -1; else if (dy0 < -1) dy0 = 1;
+        if (dx1 > 1) dx1 = -1; else if (dx1 < -1) dx1 = 1;
+        if (dy1 > 1) dy1 = -1; else if (dy1 < -1) dy1 = 1;
+        
+        if ((dy0 == -1 && dy1 == 1) || (dy0 == 1 && dy1 == -1) ) {
+            drawBody(p->val.x, p->val.y, 0, Color);
+        }
+        if ((dx0 == -1 && dx1 == 1) || (dx0 == 1 && dx1 == -1) ) {
+            drawBody(p->val.x, p->val.y, 1, Color);
+        }
+        
+        if ((dx0 == -1 && dy1 == -1) || (dx1 == -1 && dy0 == -1)) {
+            drawTurn(p->val.x, p->val.y, 0, Color);
+        }
+        if ((dx0 == 1 && dy1 == -1) || (dx1 == 1 && dy0 == -1)) {
+            drawTurn(p->val.x, p->val.y, 1, Color);
+        }
+        if ((dx0 == -1 && dy1 == 1) || (dx1 == -1 && dy0 == 1)) {
+            drawTurn(p->val.x, p->val.y, 2, Color);
+        }
+        if ((dx0 == 1 && dy1 == 1) || (dx1 == 1 && dy0 == 1)) {
+            drawTurn(p->val.x, p->val.y, 3, Color);
+        }
+        
+        p = p->next;
+    }
+    
+    int dx0 = (p->prev->val.x - p->val.x), dy0 = (p->prev->val.y - p->val.y);
+    if (dx0 > 1) dx0 = -1; else if (dx0 < -1) dx0 = 1;
+    if (dy0 > 1) dy0 = -1; else if (dy0 < -1) dy0 = 1;
+    
+    if (dy0 == 1) drawTail(p->val.x, p->val.y, 0, Color);
+    if (dx0 == -1) drawTail(p->val.x, p->val.y, 1, Color);
+    if (dy0 == -1) drawTail(p->val.x, p->val.y, 2, Color);
+    if (dx0 == 1) drawTail(p->val.x, p->val.y, 3, Color);
 }
 
-void drawSnake_2() {
-    // 咕咕咕。
-}
-
-void drawMap() {
+void drawMap(struct ns_Snake::Snake *s) {
     if (DEBUG) ns_Map::OutMap();
     for (int x = 0; x < Width; x++) {
         for (int y = 0; y < High; y++) {
@@ -598,14 +828,10 @@ void drawMap() {
                 drawApple(x, y);
                 continue;
             }
-            if (isSnake(x, y)) {
-                putpixel(x, y, SnakeColor);
-            }
-            if (isSnake_2(x, y)) {
-                putpixel(x, y, Snake2Color);
-            }
         }
     }
+    drawSnake(s, SnakeColor);
+    if (player_mode == 2) drawSnake(s + 1, Snake2Color);
 }
 
 } // namespace ns_Draw
@@ -715,6 +941,8 @@ void Start() {
     const int d_ly = 281, d_ry = 353;
     
     while (1) {
+        delay_fps(10);
+        
         while (keystate(key_mouse_l)) {
             int x, y;
             mousepos(&x, &y);
@@ -752,7 +980,7 @@ void Main() {
         
         Dbg
         
-        ns_Draw::drawMap();
+        ns_Draw::drawMap(s);
         
         Dbg
         
@@ -772,16 +1000,17 @@ void Main() {
                 enum _toward twd = s->toward;
                 
                 key_msg S = getkey();
-                if (S.key == key_up || S.key == key_W) {
+                
+                if (S.key == key_up || S.key == 'w' || S.key == 'W') {
                     if (twd == l || twd == r) twd = u;
                 }
-                if (S.key == key_left || S.key == key_A) {
+                if (S.key == key_left || S.key == 'a' || S.key == 'A') {
                     if (twd == u || twd == d) twd = l;
                 }
-                if (S.key == key_down || S.key == key_S) {
+                if (S.key == key_down || S.key == 's' || S.key == 'S') {
                     if (twd == l || twd == r) twd = d;
                 }
-                if (S.key == key_right || S.key == key_D) {
+                if (S.key == key_right || S.key == 'd' || S.key == 'D') {
                     if (twd == u || twd == d) twd = r;
                 }
                 
@@ -793,7 +1022,7 @@ void Main() {
             
             if (!res) goto gamefail;
             
-            ns_Draw::drawMap();
+            ns_Draw::drawMap(s);
         }
         
       gamefail:
@@ -820,7 +1049,7 @@ void Main_2() {
         
         Dbg
         
-        ns_Draw::drawMap();
+        ns_Draw::drawMap(s);
         
         Dbg
         
@@ -833,21 +1062,45 @@ void Main_2() {
             else delay_fps(fps);
             ns_Apple::Set();
             
+            int usr1 = 0, usr2 = 0;
+            
+            while (kbhit()) {
+                int k = getch();
+                
+                usr1 |= (k == 'w' || k == 'W') << 0;
+                usr1 |= (k == 'a' || k == 'A') << 1;
+                usr1 |= (k == 's' || k == 'S') << 2;
+                usr1 |= (k == 'd' || k == 'D') << 3;
+                
+                usr2 |= (k == (0x100 | key_up)) << 0;
+                usr2 |= (k == (0x100 | key_left)) << 1;
+                usr2 |= (k == (0x100 | key_down)) << 2;
+                usr2 |= (k == (0x100 | key_right)) << 3;
+            }
+            
             Dbg
             
-            if (keystate(key_W)) if (s->toward == l || s->toward == r) {s->toward = u; goto Nx;}
-            if (keystate(key_A)) if (s->toward == u || s->toward == d) {s->toward = l; goto Nx;}
-            if (keystate(key_S)) if (s->toward == l || s->toward == r) {s->toward = d; goto Nx;}
-            if (keystate(key_D)) if (s->toward == u || s->toward == d) {s->toward = r; goto Nx;}
+            if (s->toward == l || s->toward == r) {
+                if (usr1 & 0x1) {s->toward = u; goto Nx;}
+                if (usr1 & 0x4) {s->toward = d; goto Nx;}
+            }
+            if (s->toward == u || s->toward == d) {
+                if (usr1 & 0x2) {s->toward = l; goto Nx;}
+                if (usr1 & 0x8) {s->toward = r; goto Nx;}
+            }
             
           Nx:
             
             s++;
             
-            if (keystate(key_up)) if (s->toward == l || s->toward == r) {s->toward = u; goto Nx2;}
-            if (keystate(key_left)) if (s->toward == u || s->toward == d) {s->toward = l; goto Nx2;}
-            if (keystate(key_down)) if (s->toward == l || s->toward == r) {s->toward = d; goto Nx2;}
-            if (keystate(key_right)) if (s->toward == u || s->toward == d) {s->toward = r; goto Nx2;}
+            if (s->toward == l || s->toward == r) {
+                if (usr2 & 0x1) {s->toward = u; goto Nx2;}
+                if (usr2 & 0x4) {s->toward = d; goto Nx2;}
+            }
+            if (s->toward == u || s->toward == d) {
+                if (usr2 & 0x2) {s->toward = l; goto Nx2;}
+                if (usr2 & 0x8) {s->toward = r; goto Nx2;}
+            }
             
           Nx2:
             
@@ -860,17 +1113,17 @@ void Main_2() {
             if (!res)          goto gamefail1;
             if (!res2)         goto gamefail2;
             
-            ns_Draw::drawMap();
+            ns_Draw::drawMap(s);
         }
         
       gamefail1:
         
-        ns_Output::_outtextxy(Width / 2, High / 2, L"1 loser, 2 winner.");
+        ns_Output::_outtextxy(Width / 2, High / 2, L"player 2 win!");
         goto ed;
       
       gamefail2:
         
-        ns_Output::_outtextxy(Width / 2, High / 2, L"2 loser, 1 winner.");
+        ns_Output::_outtextxy(Width / 2, High / 2, L"player 1 win!");
         
       gamefail0:
         
@@ -885,18 +1138,18 @@ void Main_2() {
     }
 }
 
-int main()
-{
-	initgraph(Width, High);				//初始化图形界面
+int main() {
+    
+	initgraph(Width, High);				// 初始化图形界面
 	
 	Start();
 	
 	if (player_mode == 1) Main();
 	else Main_2();
 	
-	getch();                            //暂停，等待键盘按键
+	getch();                            // 暂停，等待键盘按键
 
-	closegraph();						//关闭图形界面
+	closegraph();						// 关闭图形界面
 	
 	return 0;
 }
