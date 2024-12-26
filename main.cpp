@@ -5,6 +5,7 @@
  * 项目名称：贪吃蛇
  * 小组成员：刘逸熙、李霖、蔡思博
  * 
+ * TODO: 难度系统，结算界面，游戏结束时再选单人/双人界面，分数系统，暂停键
  * 
  *******************************************/
 #include <graphics.h>
@@ -31,6 +32,15 @@
 */
 
 int player_mode; // 1 单人 2 双人
+const long long MaxScore = 1e7; // score 达到或超过，即胜利
+int Fullpc;      // 达到满分所需 pc 数，根据难度随机
+int ScorePerpc;  // 每 pc 带来的分数
+
+// pc 计算方法：floor(sqrt(combo)) * 所吃物品使蛇身长的价值，poison为 0
+
+long long score1 = 0, score2 = 0;
+int combo1 = 0, combo2 = 0;
+int len1 = 0, len2 = 0;
 
 const int Width = 1080;
 const int High = 600;
@@ -67,6 +77,10 @@ int _rand() {
     else return rand();
 }
 
+int RandMax() {
+    return 0x7fffffff;
+}
+
 int rand(int x, int y) {
     return _rand() % (y - x + 1) + x;
 }
@@ -75,11 +89,25 @@ int rand(int x, int y) {
 
 struct Pos {
     int x, y;
+    Pos() {x = y = 0;}
+    Pos(int x, int y):
+        x(x), y(y) {}
+    
+    bool operator ==(const Pos& ot) const {
+        return x == ot.x && y == ot.y;
+    }
 };
 
-void init_pos(struct Pos *p) {
-    p->x = p->y = 0;
-}
+namespace ns_PosHash {
+
+class Hash {
+  public:
+    std::size_t operator()(const Pos& k) const {
+        return std::hash<int>()(k.x) ^ std::hash<int>()(k.y);
+    }
+};
+
+} // namespace ns_PosHash
 
 namespace ns_List {
 
@@ -91,7 +119,6 @@ struct List {
 void init(struct List *p) {
     p->next = NULL;
     p->prev = NULL;
-    init_pos(&(p->val));
 }
 
 void del_next(struct List *p) {
@@ -147,7 +174,7 @@ const int H = (High - Edge * 2) / aPixel;
 #define SUPER_APPLE_VAL 5           // 超级苹果（+5）
 #define ULTRA_APPLE_VAL 6           // 至尊苹果（+10）
 #define POISON_APPLE_VAL 7          // 毒苹果（-5）
-#define DEATH_APPLE_VAL 8           // 吃了会暴毙的苹果（-inf）
+#define DEATH_APPLE_VAL 8           // 墙（-inf）
 
 /**
  * Ground = 0
@@ -221,11 +248,11 @@ struct Snake {
  *          <--Width-->
  **/
 struct ::Pos initNextPos(int reset = 0, int nx = -1, int ny = 0) {
-    static ::Pos now = {-1, 0};
+    static ::Pos now = Pos(-1, 0);
     
     // 重置一次位置
     if (reset) {
-        now = {nx, ny};
+        now = Pos(nx, ny);
         return now;
     }
     
@@ -236,7 +263,7 @@ struct ::Pos initNextPos(int reset = 0, int nx = -1, int ny = 0) {
         else if (now.x == 0) {
             // assert(now.y != Map::H - 1);
             now.y++;
-            if (now.y == ns_Map::H) now = {0, 0};
+            if (now.y == ns_Map::H) now = Pos(0, 0);
         }
     }
     else { // even
@@ -246,7 +273,7 @@ struct ::Pos initNextPos(int reset = 0, int nx = -1, int ny = 0) {
         else if (now.x == ns_Map::W - 1) {
             // assert(now.y != Map::H - 1);
             now.y++;
-            if (now.y == ns_Map::H) now = {0, 0};
+            if (now.y == ns_Map::H) now = Pos(0, 0);
         }
     }
     return now;
@@ -254,11 +281,11 @@ struct ::Pos initNextPos(int reset = 0, int nx = -1, int ny = 0) {
 
 // 方向和上面的相反，中心对称
 struct ::Pos initNextPos_2(int reset = 0, int nx = -1, int ny = 0) {
-    static ::Pos now = {-1, 0};
+    static ::Pos now = Pos(-1, 0);
     
     // 重置一次位置
     if (reset) {
-        now = {nx, ny};
+        now = Pos(nx, ny);
         return now;
     }
     
@@ -269,7 +296,7 @@ struct ::Pos initNextPos_2(int reset = 0, int nx = -1, int ny = 0) {
         else if (now.x == 0) {
             // assert(now.y != Map::H - 1);
             now.y++;
-            if (now.y == ns_Map::H) now = {0, 0};
+            if (now.y == ns_Map::H) now = Pos(0, 0);
         }
     }
     else { // even
@@ -279,11 +306,11 @@ struct ::Pos initNextPos_2(int reset = 0, int nx = -1, int ny = 0) {
         else if (now.x == ns_Map::W - 1) {
             // assert(now.y != Map::H - 1);
             now.y++;
-            if (now.y == ns_Map::H) now = {0, 0};
+            if (now.y == ns_Map::H) now = Pos(0, 0);
         }
     }
     
-    Pos the_EmpErroR = {ns_Map::W - now.x - 1, ns_Map::H - now.y - 1};
+    Pos the_EmpErroR = Pos(ns_Map::W - now.x - 1, ns_Map::H - now.y - 1);
     
     return the_EmpErroR;
 };
@@ -422,7 +449,7 @@ void init_2(struct Snake *s) {
     
     p = s->Head;
     
-    Pos val2 = {ns_Map::W - 1 - p->val.x, ns_Map::H - 1 - p->val.y};
+    Pos val2 = Pos(ns_Map::W - 1 - p->val.x, ns_Map::H - 1 - p->val.y);
     
     // 计算头朝向哪里
     if (val2.y & 1) { // 奇数行
@@ -447,6 +474,14 @@ void init_2(struct Snake *s) {
 }
 
 void del(struct Snake *s) {
+    if (s->Head == s->Tail) {
+        free(s->Head);
+        s->Head = NULL, s->Tail = nullptr;
+        free(s);
+        s = NULL;
+        return;
+    }
+    
     ns_List::List *rem = s->Head->next, *tmp = NULL;
     while (rem != s->Tail && rem != NULL) {
         tmp = rem->next;
@@ -470,35 +505,184 @@ void OutSnake(struct Snake* s) {
 
 } // namespace ns_Snake
 
-namespace ns_Image {
+namespace ns_Color {
 
 int whiteAbs(color_t x) {
     return (x & 0xff) + ((x >> 8) & 0xff) + ((x >> 16) & 0xff);
 }
 
 bool isWhite(color_t x) {
-    if (whiteAbs(x) > 0xd0 * 3) return 1;
+    if (whiteAbs(x) > 0xe0 * 3) return 1;
     else return 0;
 }
 
+color_t AtoB(color_t A, color_t B, int wa, int wb) {
+    int _ra = (A >> 16) & 0xff, _rb = (B >> 16) & 0xff;
+    int _ga = (A >> 8) & 0xff, _gb = (B >> 8) & 0xff;
+    int _ba = (A >> 0) & 0xff, _bb = (B >> 0) & 0xff;
+    
+    _ra = (_ra * wa + _rb * wb) / (wa + wb);
+    _ga = (_ga * wa + _gb * wb) / (wa + wb);
+    _ba = (_ba * wa + _bb * wb) / (wa + wb);
+    
+    return RGB(_ra, _ga, _ba);
+}
+
 } // namespace ns_Image
+
+namespace ns_Apple {
+
+const int MaxAppleCount = 5;
+
+struct ::Pos *PosPool;
+int nHead;
+
+const int AppleTimeLim = 15 * fps;
+
+const int BigAppleP = 60;
+const int SuperAppleP = 150;
+const int UltraAppleP = 300;
+const int PoisonAppleP = 60;
+const int DeathAppleP = 150;
+
+const int BigAppleEff = 3;
+const int SuperAppleEff = 5;
+const int UltraAppleEff = 10;
+const int PoisonAppleEff = -5;
+const int DeathAppleEff = 0x80000000;
+
+class SpApple {
+  private:
+    Pos pos;
+    int kind;       // 吃完的效果
+    int timer;
+    
+  public:
+    SpApple() {}
+    
+    SpApple(Pos pos, int kind, int timer):
+        pos(pos), kind(kind), timer(timer) {}
+    
+    void tick() {
+        timer--;
+    }
+    bool death() {
+        return timer == 0;
+    }
+    int effect() {
+        return kind;
+    }
+    bool danger() {
+        return timer < 20;
+    }
+    bool isDraw() {
+        return timer & 1;
+    }
+};
+
+std::unordered_map<Pos, SpApple, ns_PosHash::Hash> AppleSet;
+
+void init() {
+    PosPool = (struct Pos*)malloc(sizeof(Pos) * ns_Map::H * ns_Map::W);
+    memset(PosPool, 0, sizeof(Pos) * ns_Map::H * ns_Map::W);
+    nHead = 0;
+}
+
+Pos NewApplePos() {
+    int x = ns_Random::rand(0, nHead - 1);
+    Pos ix = PosPool[x];
+    for (int j = x + 1; j < nHead; j++) {
+        PosPool[j - 1] = PosPool[j];
+    }
+    PosPool[--nHead] = Pos();
+    return ix;
+}
+
+void SetApple(int NowCnt) {
+    if (NowCnt == MaxAppleCount) return;
+    while (NowCnt < MaxAppleCount && nHead != 0) {
+        Pos R = NewApplePos();
+        ns_Map::amap[R.y][R.x] = APPLE_VAL;
+        NowCnt++;
+    }
+}
+
+bool NewSpApple(int AppleP, int AppleEff, int valType) {
+    if (ns_Random::rand(1, AppleP) != 1) return 0;
+    Pos N = NewApplePos();
+    ns_Map::amap[N.y][N.x] = valType;
+    SpApple New(N, AppleEff, AppleTimeLim);
+    AppleSet[N] = New;
+    return 1;
+}
+
+void SetSpApple() {
+    if (nHead) nHead -= NewSpApple(BigAppleP, BigAppleEff, BIG_APPLE_VAL);
+    if (nHead) nHead -= NewSpApple(SuperAppleP, SuperAppleEff, SUPER_APPLE_VAL);
+    if (nHead) nHead -= NewSpApple(UltraAppleP, UltraAppleEff, ULTRA_APPLE_VAL);
+    if (nHead) nHead -= NewSpApple(PoisonAppleP, PoisonAppleEff, POISON_APPLE_VAL);
+    if (nHead) nHead -= NewSpApple(DeathAppleP, DeathAppleEff, DEATH_APPLE_VAL);
+}
+
+void UpdateSpApple() {
+    std::vector<Pos> era;
+    for (std::pair<const Pos, SpApple>& i: AppleSet) {
+        if (i.second.death()) era.push_back(i.first);
+        i.second.tick();
+    }
+    for (Pos i: era) {
+        AppleSet.erase(i);
+        ns_Map::amap[i.y][i.x] = GROUND_VAL;
+    }
+}
+
+void Set() {
+    int cnt = 0;
+    nHead = 0;
+    
+    for (int y = 0; y < ns_Map::H; y++) {
+        for (int x = 0; x < ns_Map::W; x++) {
+            if (ns_Map::amap[y][x] == APPLE_VAL) {
+                cnt++;
+            }
+            if (ns_Map::amap[y][x] == GROUND_VAL) {
+                PosPool[nHead++] = Pos(x, y);
+            }
+        }
+    }
+    
+    SetApple(cnt);
+    SetSpApple();
+    UpdateSpApple();
+    
+}
+
+} // namespace ns_Apple
 
 namespace ns_Draw {
 
 const color_t EdgeBk = 0xff80090d;
 const color_t GroundBk = 0xffffe7c5;
+
 const color_t SnakeColor = 0xfff91a09;
 const color_t Snake2Color = 0xffffcd02;
 
 const color_t ToSet = 0x80000000;
 const color_t SnakeEdge = 0xff000000;
-const color_t SnakeEye = EdgeBk;
+const color_t SnakeEye1 = ~0 - (EdgeBk & 0xffffff);
+const color_t SnakeEye2 = EdgeBk;
 
-color_t AppleImage[ns_Map::aPixel][ns_Map::aPixel];               // 必须20*20
 color_t SnakeHeadImage[ns_Map::aPixel][ns_Map::aPixel];           // 必须20*20
 color_t SnakeBodyImage[ns_Map::aPixel][ns_Map::aPixel];           // 必须20*20
 color_t SnakeTurnImage[ns_Map::aPixel][ns_Map::aPixel];           // 必须20*20
 color_t SnakeTailImage[ns_Map::aPixel][ns_Map::aPixel];           // 必须20*20
+
+color_t AppleImage[ns_Map::aPixel][ns_Map::aPixel];               // 必须20*20
+color_t AppleBigImage[ns_Map::aPixel][ns_Map::aPixel];
+color_t AppleSuperImage[ns_Map::aPixel][ns_Map::aPixel];
+color_t AppleUltraImage[ns_Map::aPixel][ns_Map::aPixel];
+color_t ApplePoisonImage[ns_Map::aPixel][ns_Map::aPixel];
+color_t AppleDeathImage[ns_Map::aPixel][ns_Map::aPixel];
 
 void init() {
     int n = ns_Map::aPixel;
@@ -509,6 +693,36 @@ void init() {
     for (int y = 0; y < n; y++) {
         for (int x = 0; x < n; x++) {
             scanf("%x", &AppleImage[y][x]);
+        }
+    }
+    
+    for (int y = 0; y < n; y++) {
+        for (int x = 0; x < n; x++) {
+            scanf("%x", &AppleBigImage[y][x]);
+        }
+    }
+    
+    for (int y = 0; y < n; y++) {
+        for (int x = 0; x < n; x++) {
+            scanf("%x", &AppleSuperImage[y][x]);
+        }
+    }
+
+    for (int y = 0; y < n; y++) {
+        for (int x = 0; x < n; x++) {
+            scanf("%x", &AppleUltraImage[y][x]);
+        }
+    }
+
+    for (int y = 0; y < n; y++) {
+        for (int x = 0; x < n; x++) {
+            scanf("%x", &ApplePoisonImage[y][x]);
+        }
+    }
+    
+    for (int y = 0; y < n; y++) {
+        for (int x = 0; x < n; x++) {
+            scanf("%x", &AppleDeathImage[y][x]);
         }
     }
     
@@ -523,7 +737,7 @@ void init() {
                 SnakeHeadImage[y][x] = SnakeEdge;
             }
             if (m == 'D') {
-                SnakeHeadImage[y][x] = SnakeEye;
+                SnakeHeadImage[y][x] = SnakeEye2;
             }
         }
     }
@@ -605,13 +819,13 @@ void init() {
 
 int isEdge(int,int);
 
-struct ::Pos PosOfPixel(int x, int y) {
+Pos PosOfPixel(int x, int y) {
     // assert(!isEdge(x, y));
     struct Pos res;
     res.x = (x - ns_Map::Edge) / ns_Map::aPixel;
     res.y = (y - ns_Map::Edge) / ns_Map::aPixel;
     return res;
-};
+}
 
 int isEdge(int x, int y) {
     return x < ns_Map::Edge
@@ -625,27 +839,37 @@ int isNotEdge(int x, int y) {
 }
 
 int isSnake(int x, int y) {
-    if (!isNotEdge(x, y)) return 0;
+    if (isEdge(x, y)) return 0;
     struct Pos p = PosOfPixel(x, y);
     return ns_Map::amap[p.y][p.x] == SNAKE_VAL;
 }
 
 int isSnake_2(int x, int y) {
-    if (!isNotEdge(x, y)) return 0;
+    if (isEdge(x, y)) return 0;
     struct Pos p = PosOfPixel(x, y);
     return ns_Map::amap[p.y][p.x] == SNAKE2_VAL;
 }
 
 int isApple(int x, int y) {
-    if (!isNotEdge(x, y)) return 0;
+    if (isEdge(x, y)) return 0;
     struct Pos p = PosOfPixel(x, y);
     return ns_Map::amap[p.y][p.x] == APPLE_VAL;
 }
 
 int isGround(int x, int y) {
-    if (!isNotEdge(x, y)) return 0;
+    if (isEdge(x, y)) return 0;
     struct Pos p = PosOfPixel(x, y);
     return ns_Map::amap[p.y][p.x] == GROUND_VAL;
+}
+
+int isSpApple(int x, int y) {
+    if (isEdge(x, y)) return 0;
+    struct Pos p = PosOfPixel(x, y);
+    return ns_Map::amap[p.y][p.x] == BIG_APPLE_VAL ||
+           ns_Map::amap[p.y][p.x] == SUPER_APPLE_VAL ||
+           ns_Map::amap[p.y][p.x] == ULTRA_APPLE_VAL ||
+           ns_Map::amap[p.y][p.x] == POISON_APPLE_VAL ||
+           ns_Map::amap[p.y][p.x] == DEATH_APPLE_VAL;
 }
 
 void drawEdge(int x, int y) {
@@ -673,6 +897,45 @@ void drawApple(int x, int y) {
     }
 }
 
+void drawSpApple(int x, int y) {
+    int mx = PosOfPixel(x, y).x, my = PosOfPixel(x, y).y;
+    int Type = ns_Map::amap[my][mx];
+    int nx = x - mx * ns_Map::aPixel - ns_Map::Edge;
+    int ny = y - my * ns_Map::aPixel - ns_Map::Edge;
+    
+    ns_Apple::SpApple apl = ns_Apple::AppleSet[Pos(mx, my)];
+    
+    if (apl.danger() && !apl.isDraw()) {
+        drawGround(x, y);
+        return;
+    }
+    
+    switch (Type) {
+        case BIG_APPLE_VAL:
+            if (ns_Color::isWhite(AppleBigImage[ny][nx])) drawGround(x, y);
+            else putpixel(x, y, AppleBigImage[ny][nx]);
+            break;
+        case SUPER_APPLE_VAL:
+            if (ns_Color::isWhite(AppleSuperImage[ny][nx])) drawGround(x, y);
+            else putpixel(x, y, AppleSuperImage[ny][nx]);
+            break;
+        case ULTRA_APPLE_VAL:
+            if (ns_Color::isWhite(AppleUltraImage[ny][nx])) drawGround(x, y);
+            else putpixel(x, y, AppleUltraImage[ny][nx]);
+            break;
+        case POISON_APPLE_VAL:
+            if (ns_Color::isWhite(ApplePoisonImage[ny][nx])) drawGround(x, y);
+            else putpixel(x, y, ApplePoisonImage[ny][nx]);
+            break;
+        case DEATH_APPLE_VAL:
+            if (ns_Color::isWhite(AppleDeathImage[ny][nx])) drawGround(x, y);
+            else putpixel(x, y, AppleDeathImage[ny][nx]);
+            break;
+        default:
+            puts("drawSpApple error.");
+    }
+}
+
 // u, r, d, l
 void drawHead(int x, int y, int toward, const color_t Color) {
     int n = ns_Map::aPixel;
@@ -691,7 +954,10 @@ void drawHead(int x, int y, int toward, const color_t Color) {
             if (SnakeHeadImage[y][x] == ToSet) putpixel(nx, ny, Color);
             else if (SnakeHeadImage[y][x] == 0) drawGround(nx, ny);
             else if (SnakeHeadImage[y][x] == SnakeEdge) putpixel(nx, ny, SnakeEdge);
-            else if (SnakeHeadImage[y][x] == SnakeEye) putpixel(nx, ny, SnakeEye); 
+            else if (SnakeHeadImage[y][x] == SnakeEye2) {
+                if (Color == SnakeColor) putpixel(nx, ny, SnakeEye1);
+                if (Color == Snake2Color) putpixel(nx, ny, SnakeEye2);
+            }
             else puts("Undefined color.");
         }
     }
@@ -813,7 +1079,10 @@ void drawSnake(struct ns_Snake::Snake *s, const color_t Color) {
 }
 
 void drawMap(struct ns_Snake::Snake *s) {
+    
+    Dbg
     if (DEBUG) ns_Map::OutMap();
+    
     for (int x = 0; x < Width; x++) {
         for (int y = 0; y < High; y++) {
             if (isEdge(x, y)) {
@@ -828,6 +1097,10 @@ void drawMap(struct ns_Snake::Snake *s) {
                 drawApple(x, y);
                 continue;
             }
+            if (isSpApple(x, y)) {
+                drawSpApple(x, y);
+                continue;
+            }
         }
     }
     drawSnake(s, SnakeColor);
@@ -835,46 +1108,6 @@ void drawMap(struct ns_Snake::Snake *s) {
 }
 
 } // namespace ns_Draw
-
-namespace ns_Apple {
-
-const int MaxAppleCount = 5;
-
-struct ::Pos *PosPool;
-int nHead;
-
-void init() {
-    PosPool = (struct Pos*)malloc(sizeof(Pos) * ns_Map::H * ns_Map::W);
-    memset(PosPool, 0, sizeof(Pos) * ns_Map::H * ns_Map::W);
-    nHead = 0;
-}
-
-void Set() {
-    int cnt = 0;
-    nHead = 0;
-    for (int y = 0; y < ns_Map::H; y++) {
-        for (int x = 0; x < ns_Map::W; x++) {
-            if (ns_Map::amap[y][x] == APPLE_VAL) {
-                cnt++;
-            }
-            if (ns_Map::amap[y][x] == GROUND_VAL) {
-                PosPool[nHead++] = {x, y};
-            }
-        }
-    }
-    if (cnt == MaxAppleCount) return;
-    while (cnt < MaxAppleCount) {
-        int x = ns_Random::rand(0, nHead - 1);
-        ns_Map::amap[PosPool[x].y][PosPool[x].x] = APPLE_VAL;
-        for (int j = x + 1; j < nHead; j++) {
-            PosPool[j - 1] = PosPool[j];
-        }
-        nHead--;
-        cnt++;
-    }
-}
-
-} // namespace ns_Apple
 
 int MoveSnake(struct ns_Snake::Snake *s, int opt = 0) {
     struct ns_List::List* NewHead;
@@ -895,17 +1128,24 @@ int MoveSnake(struct ns_Snake::Snake *s, int opt = 0) {
         ns_Snake::OutSnake(s);
     }
     
-    if (val == SNAKE_VAL || val == SNAKE2_VAL) return 0;
+    Dbg
+    
+    if (val == SNAKE_VAL || val == SNAKE2_VAL || val == DEATH_APPLE_VAL) return 0;
     
     switch (val) {
-        case APPLE_VAL :         s->add += 1;   break;
-        case BIG_APPLE_VAL :     s->add += 3;   break;
-        case SUPER_APPLE_VAL :   s->add += 5;   break;
-        case ULTRA_APPLE_VAL :   s->add += 10;  break;
+        case 0:                  s->add +=   0;   break;
+        case APPLE_VAL:          s->add +=   1;   break;
+        case BIG_APPLE_VAL:      s->add +=   3;   break;
+        case SUPER_APPLE_VAL:    s->add +=   5;   break;
+        case ULTRA_APPLE_VAL:    s->add +=  10;   break;
+        case POISON_APPLE_VAL:   s->add +=  -5;   break;
+        default: puts("MoveSnake error."); if (DEBUG) printf("val = %d\n", val);
     }
     
     if (opt == 0) ns_Map::amap[NewHead->val.y][NewHead->val.x] = SNAKE_VAL;
     if (opt == 1) ns_Map::amap[NewHead->val.y][NewHead->val.x] = SNAKE2_VAL;
+    
+    Dbg
     
     // 头前进一步
     s->Head->prev = NewHead;
@@ -913,13 +1153,21 @@ int MoveSnake(struct ns_Snake::Snake *s, int opt = 0) {
     s->Head = NewHead;
     
     // 尾巴后退
-    if (s->add) s->add--;
-    else {
+    s->add--;
+    
+    Dbg
+    
+    while (s->add < 0 && s->Tail != s->Head) {
         struct ns_List::List* NewTail = s->Tail->prev;
         ns_Map::amap[s->Tail->val.y][s->Tail->val.x] = GROUND_VAL;
         ns_List::del_next(NewTail);
         s->Tail = NewTail;
+        s->add++;
     }
+    
+    Dbg
+    
+    if (s->Tail == s->Head) return 0;
     
     return 1;
 }
@@ -1020,9 +1268,13 @@ void Main() {
             
             int res = MoveSnake(s);
             
+            if (DEBUG) printf("res = %d\n", res);
+            
             if (!res) goto gamefail;
             
             ns_Draw::drawMap(s);
+            
+            Dbg
         }
         
       gamefail:
