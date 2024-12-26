@@ -5,7 +5,7 @@
  * 项目名称：贪吃蛇
  * 小组成员：刘逸熙、李霖、蔡思博
  * 
- * TODO: 难度系统，结算界面，游戏结束时再选单人/双人界面，分数系统，暂停键
+ * TODO: 难度系统，结算界面，游戏结束时再选单人/双人界面，暂停键
  * 
  *******************************************/
 #include <graphics.h>
@@ -32,15 +32,6 @@
 */
 
 int player_mode; // 1 单人 2 双人
-const long long MaxScore = 1e7; // score 达到或超过，即胜利
-int Fullpc;      // 达到满分所需 pc 数，根据难度随机
-int ScorePerpc;  // 每 pc 带来的分数
-
-// pc 计算方法：floor(sqrt(combo)) * 所吃物品使蛇身长的价值，poison为 0
-
-long long score1 = 0, score2 = 0;
-int combo1 = 0, combo2 = 0;
-int len1 = 0, len2 = 0;
 
 const int Width = 1080;
 const int High = 600;
@@ -155,9 +146,7 @@ namespace ns_Map {
  * 完成的：
  *  1. 可变大小的地图（直接修改 Width 和 High）
  *  2. 双人对战模式
- * 
- * TODO:
- *  1. 更多苹果模组
+ *  3. 更多苹果模组
  * 
  **/
 
@@ -167,14 +156,6 @@ const int W = (Width - Edge * 2) / aPixel;
 const int H = (High - Edge * 2) / aPixel;
 
 #define GROUND_VAL 0                // 背景
-#define SNAKE_VAL 1                 // 蛇
-#define SNAKE2_VAL 2                // 第二条蛇（双人模式）
-#define APPLE_VAL 3                 // 苹果（+1）
-#define BIG_APPLE_VAL 4             // 大苹果（+3）
-#define SUPER_APPLE_VAL 5           // 超级苹果（+5）
-#define ULTRA_APPLE_VAL 6           // 至尊苹果（+10）
-#define POISON_APPLE_VAL 7          // 毒苹果（-5）
-#define DEATH_APPLE_VAL 8           // 墙（-inf）
 
 /**
  * Ground = 0
@@ -219,14 +200,18 @@ namespace ns_Snake {
 
 const int rawLen = 5;
 
+
+#define SNAKE_VAL 1                 // 蛇
+#define SNAKE2_VAL 2                // 第二条蛇（双人模式）
+
 /**
  * done:
  *  1. 可变长度
- *
+ *  2. 双人对战
+ *  3. 吃不同的苹果，变长不同
+ * 
  * TODO:
- *  1. 双人对战
- *  2. 吃不同的苹果，变长不同
- *  3. 人机蛇
+ *  1. 人机蛇
  **/
 
 struct Snake {
@@ -545,6 +530,14 @@ const int UltraAppleP = 300;
 const int PoisonAppleP = 60;
 const int DeathAppleP = 150;
 
+#define APPLE_VAL 3                 // 苹果（+1）
+#define BIG_APPLE_VAL 4             // 大苹果（+3）
+#define SUPER_APPLE_VAL 5           // 超级苹果（+5）
+#define ULTRA_APPLE_VAL 6           // 至尊苹果（+10）
+#define POISON_APPLE_VAL 7          // 毒苹果（-5）
+#define DEATH_APPLE_VAL 8           // 墙（-inf）
+
+const int AppleEff = 1;
 const int BigAppleEff = 3;
 const int SuperAppleEff = 5;
 const int UltraAppleEff = 10;
@@ -1109,6 +1102,87 @@ void drawMap(struct ns_Snake::Snake *s) {
 
 } // namespace ns_Draw
 
+namespace ns_Score {
+
+const long long MaxScore = 1e7; // score 达到此分数即胜利
+int Fullpc;      // 达到满分所需 pc 数，相当于难度，建议调整在 1000~10000 区间
+int ScorePerpc;  // 每 pc 带来的分数
+
+// pc 计算方法：floor(sqrt(combo)) * 所吃物品使蛇伸长的价值，poison为 0
+// combo 计算方法：蛇长度每增加 1，combo数 +1，吃 poison 断 combo
+// 最终显示的分数计算方法：蛇长度 len + score
+// score 计算方法：所有的 pc * ScorePerpc 之和，再与 MaxScore 取最小值
+
+long long score1 = 0, score2 = 0;
+int combo1 = 0, combo2 = 0;
+int len1 = 0, len2 = 0;
+
+
+void init() {
+    Fullpc = 5001;
+    ScorePerpc = MaxScore / Fullpc;
+    len1 = len2 = ns_Snake::rawLen;
+    score1 = score2 = combo1 = combo2 = 0;
+}
+
+void getScore(int val, int opt) {
+    long long& score = (!opt ? score1 : score2);
+    int& combo = (!opt ? combo1 : combo2);
+    int& len = (!opt ? len1 : len2);
+    
+    if (val == POISON_APPLE_VAL) {
+        combo = 0;
+        len -= ns_Apple::PoisonAppleEff;
+        return;
+    }
+    
+    int eff = 0;
+    
+    switch (val) {
+        case APPLE_VAL:          eff = ns_Apple::AppleEff;         break;
+        case BIG_APPLE_VAL:      eff = ns_Apple::BigAppleEff;      break;
+        case SUPER_APPLE_VAL:    eff = ns_Apple::SuperAppleEff;    break;
+        case ULTRA_APPLE_VAL:    eff = ns_Apple::UltraAppleEff;    break;
+        default: puts("getScore error."); if (DEBUG) printf("val = %d\n", val);
+    }
+    
+    combo += eff, len += eff;
+    
+    int pc = ((int)std::sqrt(combo)) * eff;
+    score += pc * ScorePerpc;
+    score = std::min(score, MaxScore);
+}
+
+std::wstring ltos(int val) {
+    std::wstring s;
+    for (int i = 0; i < 8; i++) {
+        s.push_back(val % 10 + '0');
+        val /= 10;
+    }
+    std::reverse(s.begin(), s.end());
+    return s;
+}
+
+void PrintScore1() {
+    using namespace ns_Map;
+    
+    setfont(20, 15, "Consolas", 0, 0, 2, 0, 0, 0);
+    setcolor(WHITE);
+    setbkcolor(ns_Draw::EdgeBk);
+    outtextxy(Edge, H - Edge / 2, (L"玩家1得分：" + ltos(score1 + len1)).c_str());
+}
+
+void PrintScore2() {
+    using namespace ns_Map;
+    
+    setfont(20, 15, "Consolas", 0, 0, 2, 0, 0, 0);
+    setcolor(WHITE);
+    setbkcolor(ns_Draw::EdgeBk);
+    outtextxy(Width / 2, H - Edge / 2, (L"玩家2得分：" + ltos(score2 + len2)).c_str());
+}
+
+} // namespace ns_Score
+
 int MoveSnake(struct ns_Snake::Snake *s, int opt = 0) {
     struct ns_List::List* NewHead;
     NewHead = (struct ns_List::List*)malloc(sizeof(struct ns_List::List));
@@ -1133,14 +1207,16 @@ int MoveSnake(struct ns_Snake::Snake *s, int opt = 0) {
     if (val == SNAKE_VAL || val == SNAKE2_VAL || val == DEATH_APPLE_VAL) return 0;
     
     switch (val) {
-        case 0:                  s->add +=   0;   break;
-        case APPLE_VAL:          s->add +=   1;   break;
-        case BIG_APPLE_VAL:      s->add +=   3;   break;
-        case SUPER_APPLE_VAL:    s->add +=   5;   break;
-        case ULTRA_APPLE_VAL:    s->add +=  10;   break;
-        case POISON_APPLE_VAL:   s->add +=  -5;   break;
+        case GROUND_VAL:         s->add +=   0;                          break;
+        case APPLE_VAL:          s->add +=   ns_Apple::AppleEff;         break;
+        case BIG_APPLE_VAL:      s->add +=   ns_Apple::BigAppleEff;      break;
+        case SUPER_APPLE_VAL:    s->add +=   ns_Apple::SuperAppleEff;    break;
+        case ULTRA_APPLE_VAL:    s->add +=   ns_Apple::UltraAppleEff;    break;
+        case POISON_APPLE_VAL:   s->add +=   ns_Apple::PoisonAppleEff;   break;
         default: puts("MoveSnake error."); if (DEBUG) printf("val = %d\n", val);
     }
+    
+    if (val != GROUND_VAL) ns_Score::getScore(val, opt);
     
     if (opt == 0) ns_Map::amap[NewHead->val.y][NewHead->val.x] = SNAKE_VAL;
     if (opt == 1) ns_Map::amap[NewHead->val.y][NewHead->val.x] = SNAKE2_VAL;
@@ -1214,12 +1290,14 @@ void Start() {
 }
 
 void Main() {
+    using namespace ns_Score;
     
     ns_Snake::Snake *s;
     
     while (1) {
         
         ns_Map::init();
+        ns_Score::init();
         
         Dbg
         
@@ -1242,29 +1320,45 @@ void Main() {
             ns_Apple::Set();
             
             Dbg
+
+            int usr1 = 0, pause = 0;
             
-            if (kbhit()) {
+            while (kbhit()) {
+                int k = getch();
                 
-                enum _toward twd = s->toward;
+                usr1 |= (k == 'w' || k == 'W') << 0;
+                usr1 |= (k == 'a' || k == 'A') << 1;
+                usr1 |= (k == 's' || k == 'S') << 2;
+                usr1 |= (k == 'd' || k == 'D') << 3;
                 
-                key_msg S = getkey();
+                usr1 |= (k == (0x100 | key_up)) << 0;
+                usr1 |= (k == (0x100 | key_left)) << 1;
+                usr1 |= (k == (0x100 | key_down)) << 2;
+                usr1 |= (k == (0x100 | key_right)) << 3;
                 
-                if (S.key == key_up || S.key == 'w' || S.key == 'W') {
-                    if (twd == l || twd == r) twd = u;
-                }
-                if (S.key == key_left || S.key == 'a' || S.key == 'A') {
-                    if (twd == u || twd == d) twd = l;
-                }
-                if (S.key == key_down || S.key == 's' || S.key == 'S') {
-                    if (twd == l || twd == r) twd = d;
-                }
-                if (S.key == key_right || S.key == 'd' || S.key == 'D') {
-                    if (twd == u || twd == d) twd = r;
-                }
-                
-                s->toward = twd;
-                flushkey();
+                pause |= (k == key_space || k == 'P' || k == 'p');
             }
+            
+            if (pause) {
+                setfont(20, 15, "Consolas", 0, 0, 2, 0, 0, 0);
+                setcolor(BLACK);
+                setbkcolor(ns_Draw::GroundBk);
+                ns_Output::_outtextxy(Width / 2, High / 2, L"暂停");
+                while (!keystate(key_space) && !keystate('p') && !keystate('P')) {
+                    delay_ms(10);
+                }
+            }
+            
+            if (s->toward == l || s->toward == r) {
+                if (usr1 & 0x1) {s->toward = u; goto Nx;}
+                if (usr1 & 0x4) {s->toward = d; goto Nx;}
+            }
+            if (s->toward == u || s->toward == d) {
+                if (usr1 & 0x2) {s->toward = l; goto Nx;}
+                if (usr1 & 0x8) {s->toward = r; goto Nx;}
+            }
+            
+          Nx:
             
             int res = MoveSnake(s);
             
@@ -1273,12 +1367,14 @@ void Main() {
             if (!res) goto gamefail;
             
             ns_Draw::drawMap(s);
+            ns_Score::PrintScore1();
             
             Dbg
         }
         
       gamefail:
         
+        while (!keystate(key_mouse_l)) delay_ms(10);
         ns_Map::delMap();
         ns_Snake::del(s);
         
@@ -1286,12 +1382,14 @@ void Main() {
 }
 
 void Main_2() {
+    using namespace ns_Score;
     
     ns_Snake::Snake *s;
     
-    while (1) {
+    while (1) { // 多局游戏
         
         ns_Map::init();
+        ns_Score::init();
         
         Dbg
         
@@ -1309,12 +1407,12 @@ void Main_2() {
         
         Dbg
         
-        while (1) {
+        while (1) { // 一局内操作
             if (DEBUG) getch();
             else delay_fps(fps);
             ns_Apple::Set();
             
-            int usr1 = 0, usr2 = 0;
+            int usr1 = 0, usr2 = 0, pause = 0;
             
             while (kbhit()) {
                 int k = getch();
@@ -1328,6 +1426,18 @@ void Main_2() {
                 usr2 |= (k == (0x100 | key_left)) << 1;
                 usr2 |= (k == (0x100 | key_down)) << 2;
                 usr2 |= (k == (0x100 | key_right)) << 3;
+                
+                pause |= (k == key_space || k == 'P' || k == 'p');
+            }
+            
+            if (pause) {
+                setfont(20, 15, "Consolas", 0, 0, 2, 0, 0, 0);
+                setcolor(BLACK);
+                setbkcolor(ns_Draw::GroundBk);
+                ns_Output::_outtextxy(Width / 2, High / 2, L"暂停");
+                while (!keystate(key_space) && !keystate('p') && !keystate('P')) {
+                    delay_ms(10);
+                }
             }
             
             Dbg
@@ -1364,11 +1474,16 @@ void Main_2() {
             if (!res && !res2) goto gamefail0;
             if (!res)          goto gamefail1;
             if (!res2)         goto gamefail2;
+            if (ns_Score::score2 == ns_Score::MaxScore) goto gamefail1;
+            if (ns_Score::score1 == ns_Score::MaxScore) goto gamefail2;
             
             ns_Draw::drawMap(s);
+            ns_Score::PrintScore1();
+            ns_Score::PrintScore2();
         }
         
       gamefail1:
+        
         
         ns_Output::_outtextxy(Width / 2, High / 2, L"player 2 win!");
         goto ed;
