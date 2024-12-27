@@ -5,7 +5,7 @@
  * 项目名称：贪吃蛇
  * 小组成员：刘逸熙、李霖、蔡思博
  * 
- * TODO: 难度系统，结算界面，游戏结束时再选单人/双人界面，暂停键
+ * TODO: 难度系统，结算界面，游戏结束时再选单人/双人界面
  * 
  *******************************************/
 #include <graphics.h>
@@ -652,6 +652,269 @@ void Set() {
 
 } // namespace ns_Apple
 
+namespace ns_Score {
+
+const long long MaxScore = 1e7; // score 达到此分数即胜利
+int Fullpc;      // 达到满分所需 pc 数，相当于难度，建议调整在 1000~10000 区间
+int ScorePerpc;  // 每 pc 带来的分数
+
+// pc 计算方法：floor(sqrt(combo)) * 所吃物品使蛇伸长的价值，poison为 0
+// combo 计算方法：蛇长度每增加 1，combo数 +1，吃 poison 断 combo
+// 最终显示的分数计算方法：蛇历史最大长度 Maxlen + score
+// score 计算方法：所有的 pc * ScorePerpc 之和，再与 MaxScore 取最小值
+
+long long score1 = 0, score2 = 0;
+int combo1 = 0, combo2 = 0;
+int len1 = 0, len2 = 0;
+int Maxlen1 = 0, Maxlen2 = 0;
+int Maxcombo1 = 0, Maxcombo2 = 0;
+
+void init() {
+    Fullpc = 5001;
+    ScorePerpc = MaxScore / Fullpc;
+    len1 = len2 = ns_Snake::rawLen;
+    score1 = score2 = combo1 = combo2 = 0;
+    Maxlen1 = Maxlen2 = 0;
+    Maxcombo1 = Maxcombo2 = 0;
+}
+
+long long FinalScore(int opt) {
+    if (opt == 1) return Maxlen1 + score1;
+    if (opt == 2) return Maxlen2 + score2;
+    return 0;
+}
+
+void getScore(int val, int opt) {
+    long long& score = (!opt ? score1 : score2);
+    int& combo = (!opt ? combo1 : combo2);
+    int& len = (!opt ? len1 : len2);
+    int& Maxlen = (!opt ? Maxlen1 : Maxlen2);
+    int& Maxcombo = (!opt ? Maxcombo1 : Maxcombo2);
+    
+    if (val == POISON_APPLE_VAL) {
+        combo = 0;
+        len += ns_Apple::PoisonAppleEff;
+        return;
+    }
+    
+    int eff = 0;
+    
+    switch (val) {
+        case APPLE_VAL:          eff = ns_Apple::AppleEff;         break;
+        case BIG_APPLE_VAL:      eff = ns_Apple::BigAppleEff;      break;
+        case SUPER_APPLE_VAL:    eff = ns_Apple::SuperAppleEff;    break;
+        case ULTRA_APPLE_VAL:    eff = ns_Apple::UltraAppleEff;    break;
+        default: puts("getScore error."); if (DEBUG) printf("val = %d\n", val);
+    }
+    
+    combo += eff, len += eff;
+    Maxcombo = std::max(Maxcombo, combo);
+    Maxlen = std::max(Maxlen, len);
+    
+    int pc = ((int)std::sqrt(combo)) * eff;
+    score += pc * ScorePerpc;
+    score = std::min(score, MaxScore);
+}
+
+std::wstring ltos(int val, int re) {
+    std::wstring s;
+    for (int i = 0; i < re; i++) {
+        s.push_back(val % 10 + '0');
+        val /= 10;
+    }
+    std::reverse(s.begin(), s.end());
+    return s;
+}
+
+std::string ltostr(int val, int re) {
+    std::string s;
+    for (int i = 0; i < re; i++) {
+        s.push_back(val % 10 + '0');
+        val /= 10;
+    }
+    std::reverse(s.begin(), s.end());
+    return s;
+}
+
+} // namespace ns_Score
+
+namespace ns_Save {
+
+typedef unsigned long long Timetp;
+std::map<std::string, int> Monthdecode;
+
+std::string ulltostr(Timetp val, int re) {
+    std::string s;
+    for (int i = 0; i < re; i++) {
+        s.push_back(val % 10 + '0');
+        val /= 10;
+    }
+    std::reverse(s.begin(), s.end());
+    return s;
+}
+
+Timetp time2Timetp(std::string x) {
+    char mon[5];
+    int dat, hor, min, sec, yar, Mon;
+    
+    sscanf(x.c_str(), "%*s %s %d %d:%d:%d %d", mon, 
+        &dat, &hor, &min, &sec, &yar);
+    Mon = Monthdecode[std::string(mon)];
+    
+    Timetp Ans = 0;
+    Ans += hor * 10000 + min * 100 + sec * 1;
+    Ans += dat * 1000000 + Mon * 100000000ull;
+    Ans += yar * 10000000000ull;
+    return Ans;
+}
+
+struct Backup {
+    int playerType;
+    Timetp Time;
+    long long Score;
+    int Maxlen, Maxcombo;
+    
+    Backup() {}
+    
+    void in(std::string s) {
+        sscanf(s.c_str(), "%d %llu %lld %d %d", 
+            &playerType, &Time, &Score, &Maxcombo, &Maxlen);
+    }
+    
+    std::string out() const {
+        std::string s;
+        s += (char)(playerType + '0');
+        s += ' ';
+        s += ulltostr(Time, 14);
+        s += ' ';
+        s += ns_Score::ltostr(Score, 8);
+        s += ' ';
+        s += ns_Score::ltostr(Maxcombo, 4);
+        s += ' ';
+        s += ns_Score::ltostr(Maxlen, 4);
+        return s;
+    }
+    
+    bool operator <(const Backup& rhs) const {
+        if (rhs.Score != Score) return Score > rhs.Score;
+        if (rhs.Maxlen != Maxlen) return Maxlen > rhs.Maxlen;
+        if (rhs.Maxcombo != Maxcombo) return Maxcombo > rhs.Maxcombo;
+        if (rhs.Time != Time) return Time < rhs.Time;
+        return playerType < rhs.playerType;
+    }
+    
+    bool operator ==(const Backup& rhs) const {
+        return rhs.playerType == playerType &&
+            rhs.Time == Time &&
+            rhs.Score == Score &&
+            rhs.Maxcombo == Maxcombo &&
+            rhs.Maxlen == Maxlen;
+    }
+};
+
+std::vector<Backup> save;
+
+void init() {
+    if (Monthdecode.find("Jan") == Monthdecode.end()) {
+        Monthdecode["Jan"] = 1;
+        Monthdecode["Feb"] = 2;
+        Monthdecode["Mar"] = 3;
+        Monthdecode["Apr"] = 4;
+        Monthdecode["May"] = 5;
+        Monthdecode["Jun"] = 6;
+        Monthdecode["Jul"] = 7;
+        Monthdecode["Aug"] = 8;
+        Monthdecode["Sep"] = 9;
+        Monthdecode["Oct"] = 10;
+        Monthdecode["Nov"] = 11;
+        Monthdecode["Dec"] = 12;
+    }
+    save.clear();
+    save.shrink_to_fit();
+    freopen("Save.txt", "r", stdin);
+    std::string All;
+    char x = getchar();
+    while (x != EOF) {
+        All.push_back(x);
+        x = getchar();
+    }
+    for (int i = 0; i < (int)All.length(); i += 35) {
+        while (i < (int)All.length() && !isdigit(All[i])) {
+            i++;
+        }
+        if (i == (int)All.length()) break;
+        Backup tmp;
+        tmp.in(All.substr(i, 35));
+        save.push_back(tmp);
+    }
+    
+    freopen(NULL, "r", stdin);
+    
+    if (DEBUG) {
+        for (int i = 0; i < (int)save.size(); i++) {
+            std::cout << save[i].out() << std::endl;
+        }
+    }
+}
+
+unsigned SaveNow() {
+    Backup Now, Now2;
+    Now.playerType = (player_mode == 1 ? 0 : 1);
+    
+    auto now = std::chrono::system_clock::now();
+    std::time_t now_c = std::chrono::system_clock::to_time_t(now);
+    std::tm* local_now = std::localtime(&now_c);
+    std::string s = std::string(std::asctime(local_now));
+    Now.Time = time2Timetp(s);
+    
+    Now.Score = ns_Score::score1;
+    Now.Maxcombo = ns_Score::Maxcombo1;
+    Now.Maxlen = ns_Score::Maxlen1;
+    
+    save.push_back(Now);
+    
+    if (player_mode == 2) {
+        Now2.playerType = 2;
+        Now2.Time = Now.Time;
+        Now2.Score = ns_Score::score2;
+        Now2.Maxcombo = ns_Score::Maxcombo2;
+        Now2.Maxlen = ns_Score::Maxlen2;
+        save.push_back(Now2);
+    }
+    
+    std::sort(save.begin(), save.end());
+    
+    unsigned rank = 0;
+    
+    for (int i = 0; i < (int)save.size(); i++) {
+        if (save[i] == Now) {
+            rank = i;
+            break;
+        }
+    }
+    
+    if (player_mode == 2) {
+        for (int i = 0; i < (int)save.size(); i++) {
+            if (save[i] == Now2) {
+                rank |= (i << 16);
+                break;
+            }
+        }
+    }
+    
+    freopen("Save.txt", "w", stdout);
+    
+    for (int i = 0; i < (int)save.size(); i++) {
+        std::cout << save[i].out() << std::endl;
+    }
+    
+    freopen(NULL, "w", stdout);
+    
+    return rank;
+}
+
+} // namespace ns_Backup
+
 namespace ns_Draw {
 
 const color_t EdgeBk = 0xff80090d;
@@ -1100,85 +1363,132 @@ void drawMap(struct ns_Snake::Snake *s) {
     if (player_mode == 2) drawSnake(s + 1, Snake2Color);
 }
 
+void drawEnding() {
+    using namespace ns_Score;
+    
+    color_t col0 = RED, col1 = BLUE;
+    
+    for (int y = 0; y < High; y++) {
+        for (int x = 0; x < Width; x++) {
+            int wa = High + Width - 2 - x - y, wb = x + y;
+            color_t res = ns_Color::AtoB(col0, col1, wa, wb);
+            putpixel(x, y, res);
+        }
+    }
+    
+    setfont(20, 10, "Consolas", 0, 0, 2, 0, 0, 0);
+    setcolor(WHITE);
+    setfontbkcolor(0);
+    setbkmode(TRANSPARENT);
+    
+    ns_Output::_outtextxy(Width / 2, High / 5, L"游戏结束");
+    int leny = textheight(L"纵长");
+    
+    std::wstring as = L"玩家";
+    as += (player_mode == 1 ? L"0" : L"1");
+    as += L"得分：";
+    as += ns_Score::ltos(FinalScore(1), 8);
+    outtextxy(Width / 5, High / 5 + leny * 4, as.c_str());
+    
+    as = L"最高combo：    ";
+    as += ns_Score::ltos(Maxcombo1, 4);
+    outtextxy(Width / 5, High / 5 + leny * 5, as.c_str());
+    
+    as = L"最大长度：     ";
+    as += ns_Score::ltos(Maxlen1, 4);
+    outtextxy(Width / 5, High / 5 + leny * 6, as.c_str());
+    
+    if (player_mode == 2) {
+        
+        as = L"玩家2得分：";
+        as += ltos(FinalScore(2), 8);
+        outtextxy(Width / 5, High / 5 + leny * 8, as.c_str());
+        
+        as = L"最高combo：    ";
+        as += ltos(Maxcombo2, 4);
+        outtextxy(Width / 5, High / 5 + leny * 9, as.c_str());
+        
+        as = L"最大长度：     ";
+        as += ltos(Maxlen2, 4);
+        outtextxy(Width / 5, High / 5 + leny * 10, as.c_str());
+    }
+    
+    as = L"排行榜";
+    outtextxy(Width * 3 / 4, High / 5 + leny * 1, as.c_str());
+    as = L"名次 模式    时间        分数  combo 长度";
+    outtextxy(Width * 3 / 5 - 30, High / 5 + leny * 3, as.c_str());
+    
+    unsigned rank = ns_Save::SaveNow();
+    int rank1 = rank & 0xffff, rank2 = rank >> 16;
+    
+    int rank1l = std::max(rank1 - 3, 0);
+    int rank1r = std::min(rank1 + 3, (int)ns_Save::save.size() - 1);
+    
+    std::string tmp;
+    
+    for (int i = rank1l; i <= rank1r; i++) {
+        if (i == rank1) setcolor(YELLOW);
+        else setcolor(WHITE);
+        tmp = ns_Save::ulltostr(i, 4);
+        tmp += "  ";
+        tmp += ns_Save::save[i].out();
+        outtextxy(Width * 3 / 5 - 30, 
+                  High / 5 + leny * 4 + leny * (i - rank1l), tmp.c_str());
+    }
+    
+    if (player_mode == 1) return;
+    
+    int rank2l = std::max(rank2 - 3, 0);
+    int rank2r = std::min(rank2 + 3, (int)ns_Save::save.size() - 1);
+    
+    for (int i = rank2l; i <= rank2r; i++) {
+        if (i == rank2) setcolor(YELLOW);
+        else setcolor(WHITE);
+        tmp = ns_Save::ulltostr(i, 4);
+        tmp += "  ";
+        tmp += ns_Save::save[i].out();
+        outtextxy(Width * 3 / 5 - 30, 
+                  High / 2 + leny * (i - rank2l + 3), tmp.c_str());
+    }
+}
+
 } // namespace ns_Draw
 
 namespace ns_Score {
 
-const long long MaxScore = 1e7; // score 达到此分数即胜利
-int Fullpc;      // 达到满分所需 pc 数，相当于难度，建议调整在 1000~10000 区间
-int ScorePerpc;  // 每 pc 带来的分数
-
-// pc 计算方法：floor(sqrt(combo)) * 所吃物品使蛇伸长的价值，poison为 0
-// combo 计算方法：蛇长度每增加 1，combo数 +1，吃 poison 断 combo
-// 最终显示的分数计算方法：蛇长度 len + score
-// score 计算方法：所有的 pc * ScorePerpc 之和，再与 MaxScore 取最小值
-
-long long score1 = 0, score2 = 0;
-int combo1 = 0, combo2 = 0;
-int len1 = 0, len2 = 0;
-
-
-void init() {
-    Fullpc = 5001;
-    ScorePerpc = MaxScore / Fullpc;
-    len1 = len2 = ns_Snake::rawLen;
-    score1 = score2 = combo1 = combo2 = 0;
-}
-
-void getScore(int val, int opt) {
-    long long& score = (!opt ? score1 : score2);
-    int& combo = (!opt ? combo1 : combo2);
-    int& len = (!opt ? len1 : len2);
-    
-    if (val == POISON_APPLE_VAL) {
-        combo = 0;
-        len -= ns_Apple::PoisonAppleEff;
-        return;
-    }
-    
-    int eff = 0;
-    
-    switch (val) {
-        case APPLE_VAL:          eff = ns_Apple::AppleEff;         break;
-        case BIG_APPLE_VAL:      eff = ns_Apple::BigAppleEff;      break;
-        case SUPER_APPLE_VAL:    eff = ns_Apple::SuperAppleEff;    break;
-        case ULTRA_APPLE_VAL:    eff = ns_Apple::UltraAppleEff;    break;
-        default: puts("getScore error."); if (DEBUG) printf("val = %d\n", val);
-    }
-    
-    combo += eff, len += eff;
-    
-    int pc = ((int)std::sqrt(combo)) * eff;
-    score += pc * ScorePerpc;
-    score = std::min(score, MaxScore);
-}
-
-std::wstring ltos(int val) {
-    std::wstring s;
-    for (int i = 0; i < 8; i++) {
-        s.push_back(val % 10 + '0');
-        val /= 10;
-    }
-    std::reverse(s.begin(), s.end());
-    return s;
-}
-
 void PrintScore1() {
     using namespace ns_Map;
     
-    setfont(20, 15, "Consolas", 0, 0, 2, 0, 0, 0);
+    setfont(20, 10, "Consolas", 0, 0, 2, 0, 0, 0);
     setcolor(WHITE);
-    setbkcolor(ns_Draw::EdgeBk);
-    outtextxy(Edge, H - Edge / 2, (L"玩家1得分：" + ltos(score1 + len1)).c_str());
+    setfontbkcolor(ns_Draw::EdgeBk);
+    setbkmode(TRANSPARENT);
+    std::wstring as = L"玩家";
+    as += (player_mode == 1 ? L"0" : L"1");
+    as += L"得分：";
+    as += ltos(FinalScore(1), 8);
+    as += L" combo：";
+    as += ltos(combo1, 4);
+    as += L" 长度：";
+    as += ltos(len1, 4);
+    outtextxy(Edge, H - Edge / 2, as.c_str());
 }
 
 void PrintScore2() {
     using namespace ns_Map;
     
-    setfont(20, 15, "Consolas", 0, 0, 2, 0, 0, 0);
+    setfont(20, 10, "Consolas", 0, 0, 2, 0, 0, 0);
     setcolor(WHITE);
-    setbkcolor(ns_Draw::EdgeBk);
-    outtextxy(Width / 2, H - Edge / 2, (L"玩家2得分：" + ltos(score2 + len2)).c_str());
+    setfontbkcolor(ns_Draw::EdgeBk);
+    std::wstring as = L"玩家";
+    as += L"2";
+    as += L"得分：";
+    as += ltos(FinalScore(2), 8);
+    as += L" combo：";
+    as += ltos(combo2, 4);
+    as += L" 长度：";
+    as += ltos(len2, 4);
+    outtextxy(Width / 2, H - Edge / 2, as.c_str());
 }
 
 } // namespace ns_Score
@@ -1298,6 +1608,7 @@ void Main() {
         
         ns_Map::init();
         ns_Score::init();
+        ns_Save::init();
         
         Dbg
         
@@ -1340,11 +1651,18 @@ void Main() {
             }
             
             if (pause) {
-                setfont(20, 15, "Consolas", 0, 0, 2, 0, 0, 0);
+                ns_Draw::drawMap(s);
+                ns_Score::PrintScore1();
+                
+                setfont(20, 10, "Consolas", 0, 0, 2, 0, 0, 0);
                 setcolor(BLACK);
-                setbkcolor(ns_Draw::GroundBk);
+                setfontbkcolor(ns_Draw::GroundBk);
                 ns_Output::_outtextxy(Width / 2, High / 2, L"暂停");
-                while (!keystate(key_space) && !keystate('p') && !keystate('P')) {
+                
+                int k = '0';
+                while (!kbhit() ||
+                    ((k = getch()) != key_space && (k != 'p') && (k != 'P'))) {
+                    
                     delay_ms(10);
                 }
             }
@@ -1365,6 +1683,7 @@ void Main() {
             if (DEBUG) printf("res = %d\n", res);
             
             if (!res) goto gamefail;
+            if (ns_Score::score1 == ns_Score::MaxScore) goto win;
             
             ns_Draw::drawMap(s);
             ns_Score::PrintScore1();
@@ -1374,6 +1693,23 @@ void Main() {
         
       gamefail:
         
+        setcolor(BLACK);
+        setfontbkcolor(ns_Draw::GroundBk);
+        ns_Output::_outtextxy(Width / 2, High / 2, L"死");
+        goto ed;
+      
+      win:
+        
+        setcolor(BLACK);
+        setfontbkcolor(ns_Draw::GroundBk);
+        ns_Output::_outtextxy(Width / 2, High / 2, L"胜利");
+      
+      ed:
+        
+        while (!keystate(key_mouse_l)) delay_ms(10);
+        while (keystate(key_mouse_l)) getmouse();
+        flushmouse();
+        ns_Draw::drawEnding();
         while (!keystate(key_mouse_l)) delay_ms(10);
         ns_Map::delMap();
         ns_Snake::del(s);
@@ -1390,6 +1726,7 @@ void Main_2() {
         
         ns_Map::init();
         ns_Score::init();
+        ns_Save::init();
         
         Dbg
         
@@ -1399,11 +1736,11 @@ void Main_2() {
         
         Dbg
         
-        ns_Draw::drawMap(s);
+        ns_Apple::init();
         
         Dbg
         
-        ns_Apple::init();
+        ns_Draw::drawMap(s);
         
         Dbg
         
@@ -1431,11 +1768,19 @@ void Main_2() {
             }
             
             if (pause) {
-                setfont(20, 15, "Consolas", 0, 0, 2, 0, 0, 0);
+                ns_Draw::drawMap(s);
+                ns_Score::PrintScore1();
+                ns_Score::PrintScore2();
+                
+                setfont(20, 10, "Consolas", 0, 0, 2, 0, 0, 0);
                 setcolor(BLACK);
-                setbkcolor(ns_Draw::GroundBk);
+                setfontbkcolor(ns_Draw::GroundBk);
                 ns_Output::_outtextxy(Width / 2, High / 2, L"暂停");
-                while (!keystate(key_space) && !keystate('p') && !keystate('P')) {
+                
+                int k = '0';
+                while (!kbhit() ||
+                    ((k = getch()) != key_space && (k != 'p') && (k != 'P'))) {
+                    
                     delay_ms(10);
                 }
             }
@@ -1484,12 +1829,15 @@ void Main_2() {
         
       gamefail1:
         
-        
+        setcolor(BLACK);
+        setfontbkcolor(ns_Draw::GroundBk);
         ns_Output::_outtextxy(Width / 2, High / 2, L"player 2 win!");
         goto ed;
       
       gamefail2:
         
+        setcolor(BLACK);
+        setfontbkcolor(ns_Draw::GroundBk);
         ns_Output::_outtextxy(Width / 2, High / 2, L"player 1 win!");
         
       gamefail0:
@@ -1498,6 +1846,9 @@ void Main_2() {
         
       ed:
         
+        while (!keystate(key_mouse_l)) delay_ms(10);
+        while (keystate(key_mouse_l)) getmouse();
+        ns_Draw::drawEnding();
         while (!keystate(key_mouse_l)) delay_ms(10);
         ns_Map::delMap();
         ns_Snake::del(s);
